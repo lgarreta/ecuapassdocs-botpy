@@ -1,0 +1,8 @@
+{
+  "empresa": "NTA",
+  "ecuapassdocs_url": "https://ecuapassdocs-test.up.railway.app/",
+  "codebini_url": "https://nta.corebd.net/",
+  "ecuapass_url": "https://ecuapass.aduana.gob.ec/",
+  "global_pause": "0.05",
+  "slow_pause": "0.1"
+}
