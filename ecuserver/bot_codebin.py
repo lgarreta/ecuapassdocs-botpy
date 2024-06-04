@@ -78,7 +78,7 @@ def mainGetValuesFromCodebinWeb (pdfFilepath, settings):
 # Bot for filling CODEBIN forms from ECUDOCS fields info
 #----------------------------------------------------------------
 class CodebinBot:
-	def __init__ (self, pdfFilepath, settings):
+	def setSettings (self, pdfFilepath, settings, webdriver):
 		self.settings = settings
 		self.empresa  = settings ["empresa"]
 		self.url      = settings ["codebin_url"]
@@ -91,9 +91,19 @@ class CodebinBot:
 		self.pais, self.codigoPais = Utils.getPaisCodigoFromDocNumber (self.docNumber)
 		self.user, self.password   = self.getUserPasswordForEmpresaPais (self.empresa, self.pais)
 
-		self.webdriver             = CodebinBot.webdriver
+		self.webdriver             = webdriver
 
+	def initWebdriver (self):
+		Utils.printx ("Initializing webdriver...")
+		options = Options()
+		options.add_argument("--headless")
+		self.IS_OPEN = False
+		self.LAST_PAIS = ""
+		self.webdriver = webdriver.Firefox (options=options)
+		Utils.printx ("...webdriver initialized")
+		return self.webdriver
 	#------------------------------------------------------
+	# Used 
 	#------------------------------------------------------
 	@staticmethod
 	def getWaitWebdriver ():

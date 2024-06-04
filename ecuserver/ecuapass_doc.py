@@ -20,7 +20,7 @@ from ecuapassdocs.info.ecuapass_feedback import EcuFeedback
 from ecuapassdocs.info.ecuapass_utils import Utils
 
 from ecuapass_azure import EcuAzure
-from bot_codebin import  CodebinBot, mainGetValuesFromCodebinWeb, DocumentNotFoundException 
+from bot_codebin import  CodebinBot, DocumentNotFoundException 
 
 USAGE="\n\
 Extract info from ECUAPASS documents in PDF (cartaporte|manifiesto|declaracion).\n\
@@ -45,9 +45,8 @@ class EcuDoc:
 	#----------------------------------------------------------
 	# Extract fields info from PDF document (using CODEBIN bot)
 	#----------------------------------------------------------
-	def extractDocumentFields (self, inputFilepath, runningDir):
+	def extractDocumentFields (self, inputFilepath, runningDir, webdriver):
 		try:
-			
 			# Load "empresa": reads and checks if "settings.txt" file exists
 			settings = Utils.loadSettings (runningDir)
 			empresa  = settings ["empresa"]
@@ -55,7 +54,8 @@ class EcuDoc:
 			# Start document processing
 			filename         = os.path.basename (inputFilepath)
 			documentType     = Utils.getDocumentTypeFromFilename (filename)
-			outputFile       = EcuDoc.processDocument (inputFilepath, documentType, settings)
+			outputFile       = EcuDoc.processDocument (inputFilepath,
+											  documentType, settings, webdriver)
 			fieldsJsonFile   = EcuDoc.convertNewlinesToWin (outputFile)
 
 			# Send file as feedback
@@ -81,7 +81,7 @@ class EcuDoc:
 			Utils.printException (ex)
 
 	#-- Get document fields from PDF document
-	def processDocument (inputFilepath, docType, settings):
+	def processDocument (inputFilepath, docType, settings, webdriver):
 		# CACHE: Check codebin .json cache document
 		fieldsJsonFile = EcuDoc.loadCodebinCache (inputFilepath)
 		if fieldsJsonFile:
@@ -91,8 +91,9 @@ class EcuDoc:
 		printx (">>>>>>>>>>>>>>>>>>>>>> Getting document fields <<<<<<<<<<<<<<<<<<<<<<<")
 		filename = os.path.basename (inputFilepath)
 		printx (f"+++ Buscando documento '{filename}' en CODEBIN...")
-		#webdriver      = CodebinBot.getWebdriver ()
-		codebinBot     = CodebinBot (inputFilepath, settings)
+		print ("+++ EcuDoc webdriver:", webdriver)
+		codebinBot = CodebinBot ()
+		codebinBot.setSettings (inputFilepath, settings, webdriver)
 		fieldsJsonFile = codebinBot.getDocumentFile ()
 		Utils.printx (">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
 

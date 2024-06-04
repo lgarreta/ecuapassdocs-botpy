@@ -7,11 +7,14 @@ LOG:
 """
 
 import os, sys, time
+import multiprocessing as mp
+from multiprocessing import freeze_support
+
 import signal
 from threading import Thread as threading_Thread
 
 # For server
-from flask import Flask as flask_Flask 
+from flask import Flask 
 from flask import request as flask_request 
 from werkzeug.serving import make_server
 
@@ -19,9 +22,6 @@ from werkzeug.serving import make_server
 from bot_codebin import CodebinBot
 from bot_codebin import startCodebinBot
 from bot_ecuapassdocs import startEcuapassdocsBot
-
-# For open URLs
-from selenium import webdriver
 
 # doc, document bots
 from ecuapass_doc import EcuDoc
@@ -35,50 +35,69 @@ from ecuapassdocs.info.ecuapass_utils import Utils
 # Driver for web interaction
 driver = None
 def main ():
-	args = sys.argv
-	if len (args) > 1:
-		if "--version" in args:
-			print ("Version: ", VERSION)
-		else:
-			mainDoc (sys.argv [1], os.getcwd())
-	else:
-		EcuServer.run_server_forever()
+	EcuServer.start ()
 
 def printx (*args, flush=True, end="\n"):
 	print ("SERVER:", *args, flush=flush, end=end)
 #-----------------------------------------------------------
 # Ecuapass server: listen GUI messages and run processes
 #-----------------------------------------------------------
-app = flask_Flask (__name__)
-class EcuServer:
+class FlaskServer (Flask):
+	def __init__(self, webdriver):
+		super().__init__(__name__)
+		self.webdriver = webdriver
+	
+print ("+++ Initializing vars: webdriver, app")
+webdriver = CodebinBot.getWaitWebdriver ()
+app = FlaskServer (webdriver)
 
+class EcuServer:
+	def start ():
+		print ("Starting server processes...")
+		serverProcess = threading_Thread (target=EcuServer.run_server_forever)
+		serverProcess.start ()
+
+		print ("Checking forced exit...")
+		while not os.path.exists ("exit.txt"):
+			print ("...")
+			time.sleep (5)
+
+		print ("Forced exit...")
+		printx ("...Finalizando CODEBIN...")
+		app.webdriver.quit ()
+		printx ("...Finalizando Server...")
+		serverProcess.join ()
+
+		print ("Server terminated...")
+
+
+	def run_server_forever ():
+		print ("+++ run_server_forever EcuServer webdriver:", app.webdriver)
+
+		# Start the exit thread
+		#exit_thread = threading_Thread (target=EcuServer.checkForcedExit)
+		#exit_thread.start ()
+
+		# Start the server
+		portNumber  = EcuServer.getPortNumber ()
+		server      = make_server('127.0.0.1', portNumber, app)
+		printx (f">>>>>>>>>>>>>>>> Server version: {VERSION} <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
+		printx (f">>>>>>>>>>>>>>>> Server is running on port::{portNumber}::<<<<<<<<<<<<<<<<<<")
+
+		server.serve_forever()
+
+	#----------------------------------------------------------------
 	#--  Checks for a file exists to force an exit
+	#----------------------------------------------------------------
 	def checkForcedExit ():
-		print ("+++ Exit current dir:", os.getcwd())
+		print ("+++ Startin exit thread:", os.getcwd())
 		while True:
+			print ("...", end="")
 			if os.path.exists ("exit.txt"):
 				print ("+++ Salida forzada")
 				sys.exit (1)
 			else:
 				time.sleep(5)  # Adjust sleep time as needed	
-
-
-	def run_server_forever ():
-		portNumber  = EcuServer.getPortNumber ()
-		server = make_server('127.0.0.1', portNumber, app)
-
-		# Start firefox webdriver
-		printx (f">>>>>>>>>>>>>>>> Server version: {VERSION} <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
-		printx (f">>>>>>>>>>>>>>>> Server is running on port::{portNumber}::<<<<<<<<<<<<<<<<<<")
-
-		#CodebinBot.initCodebinWebdriver()
-		CodebinBot.getWaitWebdriver()
-
-		# Create and start the thread
-		#exit_thread = threading_Thread (target=EcuServer.checkForcedExit)
-		#exit_thread.start ()
-
-		server.serve_forever()
 
 	#----------------------------------------------------------------
 	# Listen for remote calls from Java GUI
@@ -86,6 +105,7 @@ class EcuServer:
 	@app.route('/start_processing', methods=['GET', 'POST'])
 	def start_processing ():
 			printx ("-------------------- Iniciando Procesamiento -------------------------")
+			print ("+++ start_processing webdriver:", app.webdriver)
 			# Get the file name from the request
 			service = flask_request.json ['service']
 			data1   = flask_request.json ['data1']
@@ -132,13 +152,13 @@ class EcuServer:
 	# Stop server
 	#----------------------------------------------------------------
 	def stop_server (runningDir):
-		printx ("...Finalizando sesión de CODEBIN...")
-		webdriver = CodebinBot.getWebdriver ()
+		printx ("...Finalizando sesion CODEBIN...")
+		#webdriver = CodebinBot.getWebdriver ()
 		webdriver.quit ()
-		printx ("...Finalizando servidor Ecuapass...")
-		exitFilepath = os.path.join (runningDir, "exit.txt")
-		printx ("...Directorio salida: ", exitFilepath)
-		open (exitFilepath,"w").write ("")
+		#printx ("...Finalizando servidor Ecuapass...")
+		#exitFilepath = os.path.join (runningDir, "exit.txt")
+		#printx ("...Directorio salida: ", exitFilepath)
+		#open (exitFilepath,"w").write ("")
 		sys.exit (0)
 
 	#----------------------------------------------------------------
@@ -155,7 +175,7 @@ class EcuServer:
 		os.chdir (workingDir)
 		ecudoc = EcuDoc ()
 
-		message = ecudoc.extractDocumentFields (docFilepath, runningDir)
+		message = ecudoc.extractDocumentFields (docFilepath, runningDir, app.webdriver)
 		return (message)
 
 #		TARGET = ecudoc.extractDocumentFields
@@ -163,7 +183,15 @@ class EcuServer:
 #		threading_Thread (target=TARGET, args=ARGS).start ()
 
 	#----------------------------------------------------------------
+	#----------------------------------------------------------------
+	#----------------------------------------------------------------
+	#----------------------------------------------------------------
+	#----------------------------------------------------------------
 	# Open Ecuapassdocs URL in Chrome browser
+	#----------------------------------------------------------------
+	#----------------------------------------------------------------
+	#----------------------------------------------------------------
+	#----------------------------------------------------------------
 	#----------------------------------------------------------------
 	def openEcuapassdocsURL (url):
 		import pyautogui as py
@@ -180,7 +208,7 @@ class EcuServer:
 		if driver:
 			driver.quit ()
 		print (">> Inicializando webdriver...")
-		driver = webdriver.Chrome()
+		driver = selenium.webdriver.Chrome()
 		driver.get (url)
 
 		#printx (f">> Abriendo sitio web de EcuapassDocs: '{url}'")
@@ -264,26 +292,27 @@ class EcuServer:
 	# Get free port by adding 1 to the last open port
 	#------------------------------------------------------
 	def getPortNumber ():
-		portFilename = "url_port.txt"
+		portFilename    = "url_port.txt"
+		oldPortFilename = "old_url_port.txt"
 		portNumber = 5000
 		
 		# read old port
-		if not os.path.exists (portFilename):
-			raise Exception ("No disponible archivo de puerto de comunicación")
-		else:
-			with open (portFilename, "r", encoding='utf-8') as portFile: 
+		if os.path.exists (oldPortFilename):
+			with open (oldPortFilename, "r", encoding='utf-8') as portFile: 
 				portString = portFile.readline ()
-				portNumber = int (portString)
+				portNumber = 1 + int (portString)
+			os.remove (oldPortFilename)
 
 		# write new port
-		#with open (portFilename, "w", encoding='utf-8') as portFile: 
-		#	portFile.write ("%d" % portNumber)
+		print ("+++ Escribiendo nuevo puerto: ", portNumber)
+		with open (portFilename, "w", encoding='utf-8') as portFile: 
+			portFile.write ("%d" % portNumber)
 
-		return (portNumber)
-
+		return portNumber
 
 #--------------------------------------------------------------------
 # Call main 
 #--------------------------------------------------------------------
 if __name__ == '__main__':
+	freeze_support ()
 	main ()

@@ -3,6 +3,8 @@ package workers;
 import documento.DocModel;
 import documento.DocRecord;
 import java.awt.Frame;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import main.Controller;
 import main.MainController;
 import main.Utils;
@@ -10,6 +12,7 @@ import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -34,6 +37,8 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.JOptionPane;
 import javax.swing.SwingWorker;
+import java.util.Timer;
+import java.util.TimerTask;
 import widgets.TopMessageDialog;
 
 /*
@@ -44,15 +49,45 @@ public class ServerWorker extends SwingWorker {
 
 	Controller controller;
 	DocModel docModel;
-	String serverUrl; // Server address and entry point
+	String serverUrl = null; // Server address and entry point
 	ArrayList<String> commandList; // Command line as list
 
 	public ServerWorker (Controller controller, DocModel docModel) {
 		this.controller = controller;
 		this.docModel = docModel;
-		serverUrl = this.getServerUrl (); // Server address and entry point	
 	}
 
+	// Wait until port file is create by the server or shows error message
+	public void waitServerUrl () {
+		File urlFile = new File ("url_port.txt");
+		Timer timer = new Timer ();
+		long delay = 3000; // Check every 10 seconds (adjust as needed)
+
+		TimerTask task = new TimerTask () {
+			int elapsedTime = 0;
+
+			@Override
+			public void run () {
+				if (urlFile.exists ()) {
+					timer.cancel ();
+					controller.out ("+++ Archivo de puerto encontrado");
+					serverUrl = getServerUrl (); // Server address and entry point	
+					controller.onServerRunning ();					
+				} else {
+					System.out.println ("+++ Esperando archivo de puerto. Tiempo: " + elapsedTime);
+					elapsedTime++;
+					if (elapsedTime > 5) {
+						timer.cancel ();
+						JOptionPane.showMessageDialog (controller.getMainView (), "No se obtuvo archivo de puerto del servidor");
+						controller.onWindowClosing ();
+					}
+				}
+			}
+		};
+		timer.scheduleAtFixedRate (task, delay, delay);
+	}	
+
+	// OBSOLETE: Not used
 	// Create the URL using a port number sent by the 'printx' server
 	public String getServerUrl (int urlPortNumber) {
 		serverUrl = String.format ("http://127.0.0.1:%s/start_processing", urlPortNumber);
@@ -60,65 +95,53 @@ public class ServerWorker extends SwingWorker {
 		return serverUrl;
 	}
 
-	// Create the URL reading a port number in a file 'url_port.txt" written by main python program
+	// Create the URL form port number in 'url_port.txt" file written by server
 	public String getServerUrl () {
-		controller.out ("+++ Obteniendo número de puerto...");
 		String fileName = "url_port.txt";
 		BufferedReader reader = null;
 		int portNumber = 5000;
-		int sleepTime = 1000; // milliseconds
-
 		try {
-			int numberOfTries = 5;
-			while (numberOfTries > 0) {
-				File file = new File (fileName);
-				if (file.exists ())
-					break;
-				controller.out ("+++ Esperando puerto del servidor: ");
-				Thread.sleep (sleepTime);
-			}
-
 			reader = new BufferedReader (new FileReader (fileName));
 			String line = reader.readLine (); // Read the first line
+			reader.close ();
 			if (line != null) {
 				portNumber = Integer.parseInt (line); // Convert the string to an integer
-				controller.out  ("+++ Número de puerto: " + portNumber);
+				serverUrl = String.format ("http://127.0.0.1:%s/start_processing", portNumber);
+				controller.out ("+++ Server URL: " + serverUrl);
 			}
-		} catch (IOException e) {
-			e.printStackTrace ();
 		} catch (NumberFormatException e) {
 			System.out.println ("+++ The file does not contain a valid integer.");
-		} catch (InterruptedException ex) {
+		} catch (FileNotFoundException ex) {
 			Logger.getLogger (ServerWorker.class.getName ()).log (Level.SEVERE, null, ex);
-		} finally {
-			if (reader != null)
-				try {
-					reader.close (); // Close the BufferedReader
-			} catch (IOException ex) {
-				Logger.getLogger (ServerWorker.class.getName()).log (Level.SEVERE, null, ex);
-			}
+		} catch (IOException ex) {
+			Logger.getLogger (ServerWorker.class.getName ()).log (Level.SEVERE, null, ex);
 		}
-
-		String urlString = this.getServerUrl (portNumber);
-		return urlString;
+		return serverUrl;
 	}
 
-	// Send message to server to start a process using data
+
+// Send message to server to start a process using data
 	public void startProcess (String service, String data1, String data2) {
+		System.out.println  ("+++ Server URL: " + this.serverUrl);
 		try {
 			// Create URL and open connection
+			if (this.serverUrl == null) {
+				System.out.println  ("+++ No inicializado serverUrl");
+				return;
+			}
+					
 			URL url = new URL (this.serverUrl);
 			HttpURLConnection connection = (HttpURLConnection) url.openConnection ();
 
 			// Set up the connection for a POST request
 			connection.setRequestMethod ("POST");
-			connection.setRequestProperty ("Content-Type", "application/json");
+			connection.setRequestProperty ("Content-Type", "application/json; charset=UTF-8");
 			connection.setDoOutput (true);
 
 			// Create JSON payload and write it to the connection's output stream
 			String formatStr = "{\"%s\":\"%s\", \"%s\":\"%s\", \"%s\":\"%s\"}";
 			String jsonPayload = String.format (formatStr, "service", service, "data1", data1, "data2", data2);
-			//System.out.println ("+++ payload" + jsonPayload);
+			System.out.println ("+++ payload" + jsonPayload);
 			try (OutputStream os = connection.getOutputStream ()) {
 				byte[] input = jsonPayload.getBytes (StandardCharsets.UTF_8);
 				os.write (input, 0, input.length);
@@ -152,18 +175,21 @@ public class ServerWorker extends SwingWorker {
 				}
 				in.close ();
 				return true;
+
 			}
 		} catch (IOException ex) {
-			Logger.getLogger (ServerWorker.class.getName ()).log (Level.SEVERE, null, ex);
+			Logger.getLogger (ServerWorker.class
+				.getName ()).log (Level.SEVERE, null, ex);
 		}
 		return false;
 	}
 
 	@Override
-	// Handle server intermediate results received durint thread execution
+// Handle server intermediate results received durint thread execution
 	protected void process (List chunks) {
 		for (Object obj : chunks) {
 			String statusMsg = obj.toString ();
+			System.out.println ("+++ statusMsg:" + statusMsg);
 			// Check if cloud process ended successfully
 			if (statusMsg.contains ("Procesamiento exitoso del documento"))
 				controller.onEndProcessing ("EXITO", statusMsg);
@@ -188,7 +214,7 @@ public class ServerWorker extends SwingWorker {
 				String portString = statusMsg.split ("::")[1].trim ();
 				int urlPortNumber = Integer.parseInt (portString);
 				this.serverUrl = this.getServerUrl (urlPortNumber); // Server address and entry point	
-				controller.onServerRunning (urlPortNumber);
+				controller.onServerRunning ();
 			} else if (statusMsg.contains ("FEEDBACK:")) {	// Server sends feedback
 				String docFilepath = statusMsg.split ("'")[1];
 				controller.onSendFeedback (docFilepath);
@@ -221,7 +247,7 @@ public class ServerWorker extends SwingWorker {
 		else if (this.copyResourcesFromPathToTempDir ())
 			controller.out ("CLIENTE: Copiando recursos desde un PATH.");
 		else {
-			JOptionPane.showMessageDialog (null, "No se pudieron copiar los recursos necesarios para la ejecución!");
+			JOptionPane.showMessageDialog (null, "No se pudieron copiar los recursos!");
 			return false;
 		}
 		return true;
@@ -312,7 +338,7 @@ public class ServerWorker extends SwingWorker {
 			} else {
 				command = Paths.get (docModel.runningPath, exeProgram).toString ();
 				commandList = new ArrayList<> (Arrays.asList (command));
-			}	
+			}
 		else {
 			command = Paths.get (docModel.runningPath, pyProgram).toString ();
 			commandList = new ArrayList<> (Arrays.asList ("python3", command));
@@ -320,12 +346,13 @@ public class ServerWorker extends SwingWorker {
 	}
 
 	@Override
-	// Called when the server background thread finishes execution
+// Called when the server background thread finishes execution
 	protected void done () {
 		try {
 			System.out.println (">>> Servidor finalizado...");
 			String statusMsg = (String) get ();
 			System.out.println (statusMsg);
+
 		} catch (InterruptedException | ExecutionException ex) {
 			Logger.getLogger (ServerWorker.class
 				.getName ()).log (Level.SEVERE, null, ex);
@@ -339,7 +366,7 @@ public class ServerWorker extends SwingWorker {
 		if (this.copyResourcesToTempDir () == false)
 			return ("ERROR: No se pudo copiar recursos.");
 
-		controller.out ("CLIENTE: Ejecutándose el servidor: " + commandList);
+		controller.out ("CLIENTE: comando del servidor: " + commandList);
 		ProcessBuilder processBuilder;
 		processBuilder = new ProcessBuilder (commandList);
 		processBuilder.redirectErrorStream (true);

@@ -74,7 +74,7 @@ public class MainView extends JFrame {
   }// </editor-fold>//GEN-END:initComponents
 
   private void formWindowClosing(java.awt.event.WindowEvent evt) {//GEN-FIRST:event_formWindowClosing
-		controller.onWindowClossing ();
+		controller.onWindowClosing ();
   }//GEN-LAST:event_formWindowClosing
 
 	/**

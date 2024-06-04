@@ -91,6 +91,7 @@ public class InputsView extends javax.swing.JPanel {
 
     processDocumentButton.setBackground(new java.awt.Color(255, 255, 0));
     processDocumentButton.setText("<html>Procesar</html>");
+    processDocumentButton.setEnabled(false);
     processDocumentButton.addActionListener(new java.awt.event.ActionListener() {
       public void actionPerformed(java.awt.event.ActionEvent evt) {
         processDocumentButtonActionPerformed(evt);

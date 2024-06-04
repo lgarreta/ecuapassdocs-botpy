@@ -74,7 +74,10 @@ public class MainController extends Controller {
 
 		// Inital configuration settings
 		configController = new SettingsController (this);
-		configController.initSettings (mainView);
+		if (configController.initSettings (mainView) == null) {
+			System.out.println ("+++ Settings nulo");
+			System.exit (-1);
+		}
 		DocModel.companyName = configController.getSettingsValue ("empresa");
 		feedbackView = configController.feedbackView;
 
@@ -96,12 +99,11 @@ public class MainController extends Controller {
 
 		// Server worker
 		serverWorker = new ServerWorker (this, doc);
-		if (serverWorker.copyResourcesToTempDir () == false) {
-			out ("ERROR: No se pudo copiar recursos.");
-			return;
-		}
+		serverWorker.copyResourcesToTempDir ();	
+
+		serverWorker.waitServerUrl ();
 		//serverWorker.getServerUrl ();
-		// serverWorker.execute ();	
+		//serverWorker.execute ();			
 	}
 
 	// Start document processing after button pressed in InpusView
@@ -199,15 +201,42 @@ public class MainController extends Controller {
 
 	// Stop cartaporte server if it was opened
 	@Override
-	public void onWindowClossing () {
+	public void onWindowClosing () {
+		System.out.println ("+++ onWindowClosing");
 		try {
-			serverWorker.startProcess ("stop", DocModel.runningPath, null);
+			this.forcedExitWithTimer (3);
+			out ("+++ Finalizando Cliente...");
+			if (serverWorker != null)
+				serverWorker.startProcess ("stop", DocModel.runningPath, null);
+			createExitFile ();
 			ClosingMessage.showClosingMessage ("Applicación se está cerrando", this.mainView);
-			out ("Finalizando Cliente...");
-			this.forcedExitWithTimer (5);
 		} catch (Exception ex) {
 			ex.printStackTrace ();
 		}
+	}
+
+	public void createExitFile () {
+		try {
+			File myFile = new File ("exit.txt");
+			if (myFile.createNewFile ())
+				System.out.println ("+++ Creador archivo de salidad forzada!");
+			else
+				System.out.println ("+++ Archivo de salidad forzada ya existe.");
+		} catch (IOException e) {
+			e.printStackTrace ();
+		}
+	}
+
+	private void forcedExitWithTimer (int timeInSeconds) {
+		out ("+++ Tiempo de finalización: " + timeInSeconds);
+		timer = new Timer (timeInSeconds * 1000, new ActionListener () {  // Timer fires after 5 seconds
+			@Override
+			public void actionPerformed (ActionEvent e) {
+				out ("Tiempo de finalización terminado..!");
+				System.exit (0);
+			}
+		});
+		timer.start (); // Start the timer
 	}
 
 	//  InputsFileView for "reinitialize" selection
@@ -222,7 +251,8 @@ public class MainController extends Controller {
 	public void out (String s) {
 		s = "> " + s;
 		System.out.println (s);
-		feedbackView.println (s);
+		if (feedbackView != null)
+			feedbackView.println (s);
 	}
 
 	@Override
@@ -234,8 +264,9 @@ public class MainController extends Controller {
 	}
 
 	@Override
-	public void onServerRunning (int urlPortNumber) {
-		out ("CLIENTE: Escuchando en el puerto: " + urlPortNumber);
+	public void onServerRunning () {
+		out ("CLIENTE: Servidor listo");
+		serverWorker.getServerUrl ();
 		inputsView.enableProcessingButton (true);
 	}
 
@@ -257,39 +288,6 @@ public class MainController extends Controller {
 		System.out.println ("Country Selected: " + workingCountry);
 	}
 
-	// First time initialization. Set "empresa" name for  cloud document models
-	void initCurrentWorkingCompany () {
-		try {
-			File settingsFile = new File (doc.runningPath + "/settings.txt");
-			if (settingsFile.exists ()) {// Load comany name
-				BufferedReader reader = new BufferedReader (new FileReader (settingsFile));
-				doc.companyName = reader.readLine ();
-			} else { // Request company name
-				JTextField textField = new JTextField ();
-				Object[] message = {"Nombre de la empresa:", textField};
-				Object[] options = {"Aceptar", "Cancelar"};
-				while (true) {
-					int option = JOptionPane.showOptionDialog (mainView, message, "Configuración Inicial de la Empresa",
-						JOptionPane.DEFAULT_OPTION, JOptionPane.INFORMATION_MESSAGE, null, options, null);
-
-					if (option == JOptionPane.OK_OPTION) {
-						doc.companyName = textField.getText ().toUpperCase ();
-						if (doc.companyName.matches (doc.companiesString)) {
-							BufferedWriter writer = new BufferedWriter (new FileWriter (settingsFile, true));
-							writer.write (doc.companyName);
-							writer.close ();
-							break;
-						}
-					} else
-						System.exit (0);
-				}
-			}
-			out (">>>>>>>>> Empresa: " + doc.companyName + " <<<<<<<<<<");
-		} catch (Exception ex) {
-			ex.printStackTrace ();
-		}
-	}
-
 	public void openCreadorDocumentosEcuapass () {
 		String url = configController.getSettingsValue ("ecuapassdocs_url");
 		serverWorker.startProcess ("open_ecuapassdocs_URL", url, null);
@@ -304,17 +302,6 @@ public class MainController extends Controller {
 //		} catch (Exception e) {
 //			e.printStackTrace ();
 //		}
-	}
-
-	private void forcedExitWithTimer (int timeInSeconds) {
-		timer = new Timer (timeInSeconds * 1000, new ActionListener () {  // Timer fires after 5 seconds
-			@Override
-			public void actionPerformed (ActionEvent e) {
-				out ("Tiempo de finalización terminado..!");
-				System.exit (1);
-			}
-		});
-		timer.start (); // Start the timer
 	}
 
 	public static void main (String args[]) {
@@ -352,6 +339,7 @@ public class MainController extends Controller {
 }
 
 class ClosingMessage {
+
 	public static void showClosingMessage (String message, Component mainWindow) {
 		Thread thread = new Thread (() -> JOptionPane.showMessageDialog (mainWindow, message, "Cerrando aplicación", JOptionPane.INFORMATION_MESSAGE));
 		thread.start ();

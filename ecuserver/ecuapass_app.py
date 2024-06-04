@@ -3,23 +3,56 @@
 """
 Starts in paraller three processes: ecuserver, ecubin, ecugui.
 """
-import os, sys, time
+import os, sys, time, platform
+import multiprocessing
+from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import Pool, cpu_count, freeze_support
 import threading 
 import subprocess
 
-from bot_codebin import CodebinBot
 from ecuapass_server import EcuServer
 
+
+# Thread termination flag
+terminate_threads = False
+
 def main ():
+	run_executor ()
+#	global terminate_threads
+#	# Create a new port as a consecutive of the latest port
+#	initStartingFiles ()
+#
+#	# Create a new process
+#	mainProcess = multiprocessing.Process (target=run_executor)
+#	mainProcess.start()
+#
+#	#while not os.path.exists ("exit.txt"):
+#	#	time.sleep (5)
+#
+#	print ("+++ Terminate threads:", terminate_threads)
+#	#mainProcess.terminate ()
+#	mainProcess.join ()
+
+def run_executor ():
+	executor = ThreadPoolExecutor (max_workers=2)	
+	#processes = [serverProcess]
+	#processes = [guiProcess]
+	processes = [serverProcess, guiProcess]
+
+	print ("......Start futures...")
+	futures = [executor.submit (p) for p in processes]
+
+	#print ("....Wait for all threads to finish...")
+	for future in futures:
+		future.result()
+
+
+def main_processes ():
 	# Create a new port as a consecutive of the latest port
 	urlPort = getPortNumber ()
 
-	print ("+++ Getting the number of available CPU cores")
 	num_cores = cpu_count()
-
-	print ("+++ Creating a pool with the system's core count:", num_cores)
-	pool = Pool (processes=num_cores)
+	pool	  = Pool (processes=num_cores)
 
 	print ("+++ Calling to server process")
 	pool.apply_async (serverProcess, [urlPort])
@@ -46,28 +79,13 @@ def main ():
 	sys.exit (0)
 
 #------------------------------------------------------
-#------------------------------------------------------
-#def forcedExitProcess (serverProcess, guiProcess):
-#	print ("+++ Starting exit process...")
-#	exitFilename = "exit.txt"
-#	while True:
-#		print ("+++ Verificando salida forzada...")
-#		if os.path.exists (exitFilename):
-#			os.remove (exitFilename)
-#			print ("\t...Salida forzada")
-#			pool.terminate ()
-#			#serverProcess.terminate()
-#			#guiProcess.terminate()
-#			sys.exit (0)
-#		else:
-#			time.sleep(10)	# Adjust sleep time as needed	
-
 # Function to check for the existence of a file
+#------------------------------------------------------
 def forcedExitProcess (pool, stop_event):
 	print ("+++ Starting exit process...")
 	exitFilename = "exit.txt"
 	while not stop_event.is_set():
-		print ("+++ Verificando salida forzada...")
+		print ("...")
 		if os.path.exists (exitFilename):
 			os.remove (exitFilename)
 			print(f"...Salida forzada")
@@ -75,7 +93,7 @@ def forcedExitProcess (pool, stop_event):
 			pool.terminate ()
 			sys.exit (0)
 		else:
-			time.sleep (15)  # Sleep for 1 second
+			time.sleep (10)  # Sleep for 1 second
 #------------------------------------------------------
 #------------------------------------------------------
 def ecuapassCodebin ():
@@ -83,24 +101,28 @@ def ecuapassCodebin ():
 
 #------------------------------------------------------
 #------------------------------------------------------
-def serverProcess (urlPort):
+def serverProcess ():
 	print ("+++ Starting ecuapass server process...")
-
-	EcuServer.run_server_forever()
+	EcuServer.start ()
 
 #------------------------------------------------------
 # Run the external application using subprocess.Popen
 #------------------------------------------------------
-def guiProcess (urlPort):
+def guiProcess ():
 	print ("+++ Starting ecuapass GUI process...", os.getcwd())
 
-	#jarCommand = ["java", "-jar", "EcuapassDocsAnalisisGUI.jar"]
-	javaCommand = ["EcuapassDocsGUI.exe"]
-#	javaCommand = ["java", "-jar", "bin/EcuapassDocsGUI.jar"]
-#
+	if platform.system () == "Windows":
+		#javaCommand = ["EcuapassDocsGUI.exe"]
+		javaCommand = ["EcuapassDocsGUI.bat"]
+	elif platform.system () == "Linux":
+		javaCommand = ["java", "-jar", "bin/EcuapassDocsGUI.jar"]
+	else:
+		print ("ERROR: OS no detectado")
+		sys.exit (0)
+
 #	# Run the JAR file
 	process = subprocess.Popen (javaCommand, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-#
+
 	# Captures the output of a subprocess and prints it in real time.
 	capture_output (process)
 
@@ -117,26 +139,18 @@ def capture_output(process):
 #------------------------------------------------------
 # Get free port by adding 1 to the last open portFilenamet
 #------------------------------------------------------
-def getPortNumber ():
-	print ("Buscando archivo de puerto: 'url_port.txt'...")
+def initStartingFiles ():
+	print ("Buscando archivo de salida: 'exit.txt'...")
+	if os.path.exists ("exit.txt"):
+		os.remove ("exit.txt")
+
+	print ("Buscando archivo de puerto: 'old_url_port.txt'...")
 	portFilename	= "url_port.txt"
 	portFilenameOld = "old_url_port.txt"
-	portNumber = 5000
 	
-	if not os.path.exists (portFilename):
-		print ("\t...Archivo de puerto no existe")
-		sys.exit (1)
-	else:
-		# Read old port
-		with open (portFilename, "r") as portFile: 
-			portNumber = int (portFile.readline ()) + 1
-		# Write new port
-		with open (portFilename, "w") as portFile: 
-			portFile.write ("%d" % portNumber)
-
-		print ("\t...Usando el puerto:", portNumber)
-
-		return (portNumber)
+	if os.path.exists (portFilename):
+		print ("\t...Renombrado archivo de puerto")
+		os.rename (portFilename, portFilenameOld)
 
 #--------------------------------------------------------------------
 # Call main 

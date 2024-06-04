@@ -44,6 +44,8 @@ public class SettingsController {
 			initialSettingsDialog.setController (this);
 			initialSettingsDialog.startProcess ();
 			settings = this.readSettings ();
+			if (settings == null)
+				return null;
 		}
 		this.feedbackView.setSettings (settings);
 		companyName = (String) settings.get ("empresa");
@@ -54,11 +56,16 @@ public class SettingsController {
 	public void onSaveSettings (JSONObject settings) {
 		if (this.checkForValidSettings (settings) == false)
 			return;
-
 		if (this.initialSettingsDialog != null)
 			this.initialSettingsDialog.endProcess ();
-
 		this.writeSettings (settings);
+	}
+
+	public void onCancelSettings () {
+		if (this.initialSettingsDialog != null) {
+			this.initialSettingsDialog.endProcess ();
+			controller.onWindowClosing ();
+		}
 	}
 
 	public JSONObject readSettings () {
@@ -120,11 +127,6 @@ public class SettingsController {
 		} catch (Exception e) {
 			e.printStackTrace ();
 		}
-	}
-
-	public void onCancelSettings () {
-		if (this.initialSettingsDialog != null)
-			System.exit (0);
 	}
 
 	public boolean checkForValidSettings (JSONObject settings) {
