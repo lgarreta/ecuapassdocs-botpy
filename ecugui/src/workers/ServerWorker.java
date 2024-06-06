@@ -91,7 +91,6 @@ public class ServerWorker extends SwingWorker {
 	// Create the URL using a port number sent by the 'printx' server
 	public String getServerUrl (int urlPortNumber) {
 		serverUrl = String.format ("http://127.0.0.1:%s/start_processing", urlPortNumber);
-		controller.out ("+++ Server URL: " + serverUrl);
 		return serverUrl;
 	}
 
@@ -107,7 +106,6 @@ public class ServerWorker extends SwingWorker {
 			if (line != null) {
 				portNumber = Integer.parseInt (line); // Convert the string to an integer
 				serverUrl = String.format ("http://127.0.0.1:%s/start_processing", portNumber);
-				controller.out ("+++ Server URL: " + serverUrl);
 			}
 		} catch (NumberFormatException e) {
 			System.out.println ("+++ The file does not contain a valid integer.");
@@ -147,7 +145,7 @@ public class ServerWorker extends SwingWorker {
 				os.write (input, 0, input.length);
 			}
 			// Handle the response
-			System.out.println ("+++ Handling the response...");
+			controller.out ("+++ Handling the response...");
 			new Thread (() -> {
 				this.handleServerResponse (connection);
 			}).start ();
@@ -166,10 +164,11 @@ public class ServerWorker extends SwingWorker {
 				return false;
 			} else {
 				// Read the response (optional)
+				System.out.println  ("+++ Recibiendo respuesta del servidor");
 				BufferedReader in = new BufferedReader (new InputStreamReader (connection.getInputStream ()));
 				String line;
 				while ((line = in.readLine ()) != null) {
-					controller.out ("Respuesta del servidor : " + line);
+					controller.out ("   ...Respuesta del servidor : " + line);
 					List<String> chunks = Arrays.asList (line);
 					this.process (chunks);
 				}
@@ -189,8 +188,7 @@ public class ServerWorker extends SwingWorker {
 	protected void process (List chunks) {
 		for (Object obj : chunks) {
 			String statusMsg = obj.toString ();
-			System.out.println ("+++ statusMsg:" + statusMsg);
-			// Check if cloud process ended successfully
+			controller.out  ("+++ statusMsg: " + statusMsg);			// Check if cloud process ended successfully
 			if (statusMsg.contains ("Procesamiento exitoso del documento"))
 				controller.onEndProcessing ("EXITO", statusMsg);
 			else if (statusMsg.contains ("Finalizando servidor Ecuapass")) {
@@ -220,6 +218,9 @@ public class ServerWorker extends SwingWorker {
 				controller.onSendFeedback (docFilepath);
 			} else if (statusMsg.contains ("Problemas procesando documento"))
 				controller.onEndProcessing ("ERROR", statusMsg);
+			else {
+				controller.out ("Respuesta servidor no soportada");
+			}
 		}
 	}
 
@@ -243,9 +244,9 @@ public class ServerWorker extends SwingWorker {
 	public boolean copyResourcesToTempDir () {
 		docModel.createFolder (docModel.temporalPath + "/" + "resources");
 		if (this.copyResourcesFromJarToTempDir ())
-			controller.out ("CLIENTE: Copiando recursos desde un JAR.");
+			controller.out ("Copiando recursos desde un JAR.");
 		else if (this.copyResourcesFromPathToTempDir ())
-			controller.out ("CLIENTE: Copiando recursos desde un PATH.");
+			controller.out ("Copiando recursos desde un PATH.");
 		else {
 			JOptionPane.showMessageDialog (null, "No se pudieron copiar los recursos!");
 			return false;

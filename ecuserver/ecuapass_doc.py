@@ -20,7 +20,8 @@ from ecuapassdocs.info.ecuapass_feedback import EcuFeedback
 from ecuapassdocs.info.ecuapass_utils import Utils
 
 from ecuapass_azure import EcuAzure
-from bot_codebin import  CodebinBot, DocumentNotFoundException 
+from bot_codebin import  CodebinBot
+from ecuapass_exceptions import EcudocDocumentNotFoundException, EcudocConnectionNotOpenException
 
 USAGE="\n\
 Extract info from ECUAPASS documents in PDF (cartaporte|manifiesto|declaracion).\n\
@@ -36,34 +37,45 @@ def main ():
 		ecuDoc.extractDocumentFields (docFilepath, os.getcwd())
 
 def printx (*args, flush=True, end="\n"):
+	message = " ".join (args)
 	print ("SERVER:", *args, flush=flush, end=end)
+	return message
 
 #-----------------------------------------------------------
 # Run cloud analysis
 #-----------------------------------------------------------
 class EcuDoc:
-	#----------------------------------------------------------
+	#----------------------------------------------------------------
+	#-- Analyze one document given its path
 	# Extract fields info from PDF document (using CODEBIN bot)
-	#----------------------------------------------------------
-	def extractDocumentFields (self, inputFilepath, runningDir, webdriver):
+	#----------------------------------------------------------------
+	def analyzeDocument (docFilepath, runningDir, webdriver):
 		try:
+			workingDir = os.path.dirname (docFilepath)
+
+			# Check if PDF is a valid ECUAPASS document
+			if not EcuDoc.isValidDocument (docFilepath):
+				return f"Tipo de documento '{docFilepath}' no válido"
+
+			# Create and start threads for processing files
+			os.chdir (workingDir)
+
 			# Load "empresa": reads and checks if "settings.txt" file exists
 			settings = Utils.loadSettings (runningDir)
 			empresa  = settings ["empresa"]
 
 			# Start document processing
-			filename         = os.path.basename (inputFilepath)
-			documentType     = Utils.getDocumentTypeFromFilename (filename)
-			outputFile       = EcuDoc.processDocument (inputFilepath,
-											  documentType, settings, webdriver)
-			fieldsJsonFile   = EcuDoc.convertNewlinesToWin (outputFile)
+			filename       = os.path.basename (docFilepath)
+			docType        = Utils.getDocumentTypeFromFilename (filename)
+			outputFile     = EcuDoc.extractFields (docFilepath, docType, settings, webdriver)
+			fieldsJsonFile = EcuDoc.convertNewlinesToWin (outputFile)
 
 			# Send file as feedback
 			#EcuFeedback.sendFile (empresa, fieldsJsonFile)
-			#EcuFeedback.sendFile (empresa, inputFilepath)
+			#EcuFeedback.sendFile (empresa, docFilepath)
 
 			# e.g. CartaporteByza, ManifiestoNTA, ...
-			DOCCLASS = self.getInfoDocumentClass (empresa, documentType, fieldsJsonFile, runningDir)
+			DOCCLASS = EcuDoc.getInfoDocumentClass (empresa, docType, fieldsJsonFile, runningDir)
 
 			# Get document Ecuapass and document fields
 			ecuFile   = EcuDoc.saveFields (DOCCLASS.getMainFields (),   filename, "ECUFIELDS")
@@ -71,50 +83,51 @@ class EcuDoc:
 			cbinFile  = EcuDoc.saveFields (DOCCLASS.getCodebinFields(),  filename, "CBINFIELDS")
 			edocsFile = EcuDoc.saveFields (DOCCLASS.getEcuapassdocsFields(), filename, "EDOCSFIELDS")
 
-			message = f"Procesamiento exitoso del documento: '{inputFilepath}'"
-			printx (message)
-			return (message)
-		except DocumentNotFoundException as ex:
-			printx (f"ALERTA: Documento no encontrado:\\\\{str(ex)}")
+			# Full path as Java search the doc
+			return (printx (f"Procesamiento exitoso del documento: '{docFilepath}'"))
+		except EcudocDocumentNotFoundException as ex:
+			return (printx (f"ALERTA: Documento no encontrado:\\\\{str(ex)}"))
+		except EcudocConnectionNotOpenException as ex:
+			return (printx (f"ALERTA: {str(ex)}"))
 		except Exception as ex:
-			printx (f"ERROR: No se pudo extraer campos del documento:\\\\{str(ex)}")
 			Utils.printException (ex)
+			return (printx (f"ERROR: No se pudo extraer campos del documento:\\\\{str(ex)}"))
 
+	#------------------------------------------------------
 	#-- Get document fields from PDF document
-	def processDocument (inputFilepath, docType, settings, webdriver):
+	#------------------------------------------------------
+	def extractFields (docFilepath, docType, settings, webdriver):
 		# CACHE: Check codebin .json cache document
-		fieldsJsonFile = EcuDoc.loadCodebinCache (inputFilepath)
+		fieldsJsonFile = EcuDoc.loadCodebinCache (docFilepath)
 		if fieldsJsonFile:
 			return fieldsJsonFile
 
 		# CODEBIN BOT: Get data from CODEBIN web
 		printx (">>>>>>>>>>>>>>>>>>>>>> Getting document fields <<<<<<<<<<<<<<<<<<<<<<<")
-		filename = os.path.basename (inputFilepath)
+		filename = os.path.basename (docFilepath)
 		printx (f"+++ Buscando documento '{filename}' en CODEBIN...")
-		print ("+++ EcuDoc webdriver:", webdriver)
-		codebinBot = CodebinBot ()
-		codebinBot.setSettings (inputFilepath, settings, webdriver)
+		codebinBot = CodebinBot (docFilepath, settings, webdriver)
 		fieldsJsonFile = codebinBot.getDocumentFile ()
 		Utils.printx (">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
-
-
-#		# CACHE: Check azure .pkl cache document
-#		fieldsJsonFile = EcuDoc.loadAzureCache (inputFilepath)
-#		if fieldsJsonFile:
-#			return fieldsJsonFile
-#
-#		# EMBEDDED: Check embedded fields
-#		fieldsJsonFile = EcuDoc.getEmbeddedFieldsFromPDF (inputFilepath)
-#		if fieldsJsonFile:
-#			return fieldsJsonFile
 
 		if fieldsJsonFile:
 			return fieldsJsonFile
 
 		raise Exception ("No se pudo procesar documento")
 
+#		# CACHE: Check azure .pkl cache document
+#		fieldsJsonFile = EcuDoc.loadAzureCache (docFilepath)
+#		if fieldsJsonFile:
+#			return fieldsJsonFile
+#
+#		# EMBEDDED: Check embedded fields
+#		fieldsJsonFile = EcuDoc.getEmbeddedFieldsFromPDF (docFilepath)
+#		if fieldsJsonFile:
+#			return fieldsJsonFile
+
+
 		# Azure CLOUD: Analyzing the document using the cloud
-		#fieldsJsonFile = EcuAzure.analyzeDocument (inputFilepath, docType, empresa)
+		#fieldsJsonFile = EcuAzure.analyzeDocument (docFilepath, docType, empresa)
 		#if fieldsJsonFile:
 		#	return fieldsJsonFile
 
@@ -135,32 +148,32 @@ class EcuDoc:
 	#----------------------------------------------------------------
 	#-- Load previous result
 	#----------------------------------------------------------------
-	def loadCodebinCache (inputFilepath):
+	def loadCodebinCache (docFilepath):
 		fieldsJsonFile = None
 		try:
-			#filename       = os.path.basename (inputFilepath)
-			filename       = inputFilepath
+			#filename       = os.path.basename (docFilepath)
+			filename       = docFilepath
 			cacheFilename = f"{filename.split ('.')[0]}-CBINFIELDS.json"
 			printx (f"Buscando archivo CODEBIN cache '{cacheFilename}'...")
 			if os.path.exists (cacheFilename): 
 				printx ("...Archivo encontrado.")
 				with open (cacheFilename, 'r') as inFile:
 					codebinValues = json.load (inFile)
-				docType        = Utils.getDocumentTypeFromFilename (inputFilepath)
-				docNumber      = Utils.getDocumentNumberFromFilename (inputFilepath)
+				docType        = Utils.getDocumentTypeFromFilename (docFilepath)
+				docNumber      = Utils.getDocumentNumberFromFilename (docFilepath)
 				azureValues    = Utils.getAzureValuesFromCodebinValues (docType, codebinValues, docNumber)
-				fieldsJsonFile = Utils.saveFields (azureValues, inputFilepath, "DOCFIELDS")
+				fieldsJsonFile = Utils.saveFields (azureValues, docFilepath, "DOCFIELDS")
 		except:
 			Utils.printException (f"Cargando documento desde cache: '{filename}'")
 			raise
 
 		return (fieldsJsonFile)
 
-	def loadAzureCache (inputFilepath):
+	def loadAzureCache (docFilepath):
 		fieldsJsonFile = None
 		try:
-			#filename       = os.path.basename (inputFilepath)
-			filename       = inputFilepath
+			#filename       = os.path.basename (docFilepath)
+			filename       = docFilepath
 			pickleFilename = f"{filename.split ('.')[0]}-CACHE.pkl"
 			printx (f"Buscando archivo cache '{pickleFilename}'...")
 			if os.path.exists (pickleFilename): 
@@ -217,9 +230,9 @@ class EcuDoc:
 	#-----------------------------------------------------------
 	# Return document class for document type and empresa
 	#-----------------------------------------------------------
-	def getInfoDocumentClass (self, empresa, documentType, fieldsJsonFile, runningDir):
+	def getInfoDocumentClass (empresa, docType, fieldsJsonFile, runningDir):
 		DOCCLASS = None
-		if documentType.upper() == "CARTAPORTE":
+		if docType.upper() == "CARTAPORTE":
 			if "BYZA" in empresa:
 				DOCCLASS  = CartaporteByza (fieldsJsonFile, runningDir)
 			elif "BOTERO" in empresa:
@@ -228,7 +241,7 @@ class EcuDoc:
 				DOCCLASS  = CartaporteNTA (fieldsJsonFile, runningDir)
 			elif "SYTSA" in empresa:
 				DOCCLASS  = CartaporteSytsa (fieldsJsonFile, runningDir)
-		elif documentType.upper() == "MANIFIESTO":
+		elif docType.upper() == "MANIFIESTO":
 			if "BYZA" in empresa:
 				DOCCLASS = ManifiestoByza (fieldsJsonFile, runningDir)
 			elif "BOTERO" in empresa:
@@ -237,11 +250,21 @@ class EcuDoc:
 				DOCCLASS = ManifiestoNTA (fieldsJsonFile, runningDir)
 			elif "SYTSA" in empresa:
 				DOCCLASS = ManifiestoSytsa (fieldsJsonFile, runningDir)
-		elif documentType.upper() == "DECLARACION":
-			Utils.printx (f"ALERTA: '{documentType}' no están soportadas")
-			raise Exception (f"Tipo de documento '{documentType}' desconocido")
+		elif docType.upper() == "DECLARACION":
+			Utils.printx (f"ALERTA: '{docType}' no están soportadas")
+			raise Exception (f"Tipo de documento '{docType}' desconocido")
 
 		return DOCCLASS
+
+	#----------------------------------------------------------------
+	#-- Check if document filename is an image (.png) or a PDF file (.pdf)
+	#----------------------------------------------------------------
+	def isValidDocument (filename):
+		extension = filename.split (".")[1]
+		if extension.lower() in ["PDF", "pdf"]:
+			return True
+		return False
+
 #--------------------------------------------------------------------
 # Call main 
 #--------------------------------------------------------------------

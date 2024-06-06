@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 
-VERSION="0.86"
+VERSION="0.900"
 """
 LOG: 
- - 0.86: Mayo16: Improved Codebin conection (back) and error handling.
+Jun/06 : 0.900 : Redesigned as three independent process: GUI, Server, webdrive
+May/16 : 0.860 : Improved Codebin conection (back) and error handling.
 """
 
 import os, sys, time
 import multiprocessing as mp
-from multiprocessing import freeze_support
 
-import signal
-from threading import Thread as threading_Thread
+# Threads
+from threading import Thread 
+import queue
 
 # For server
 from flask import Flask 
@@ -27,7 +28,6 @@ from bot_ecuapassdocs import startEcuapassdocsBot
 from ecuapass_doc import EcuDoc
 from ecuapass_bot_cartaporte import mainBotCartaporte
 from ecuapass_bot_manifiesto import mainBotManifiesto
-from ecuapass_bot_declaracion import mainBotDeclaracion
 
 from ecuapassdocs.info.ecuapass_feedback import EcuFeedback
 from ecuapassdocs.info.ecuapass_utils import Utils
@@ -37,48 +37,57 @@ driver = None
 def main ():
 	EcuServer.start ()
 
-def printx (*args, flush=True, end="\n"):
-	print ("SERVER:", *args, flush=flush, end=end)
 #-----------------------------------------------------------
 # Ecuapass server: listen GUI messages and run processes
 #-----------------------------------------------------------
 class FlaskServer (Flask):
-	def __init__(self, webdriver):
+	def __init__(self, result_queue):
 		super().__init__(__name__)
-		self.webdriver = webdriver
-	
-print ("+++ Initializing vars: webdriver, app")
-webdriver = CodebinBot.getWaitWebdriver ()
-app = FlaskServer (webdriver)
+		self.queue = result_queue
 
+	def getWebdriver (self):
+		#self.webdriver = self.queue.get () 
+		self.webdriver = self.queue [0]
+		return self.webdriver
+
+	def stopWebdriver (self):
+		self.webdriver.quit ()
+
+#-----------------------------------------------------------
+# Global vars
+#-----------------------------------------------------------
+result_queue = list ()   # To put/get webdriver
+stdin_list   = list ()   # To put/get java GUI stdin and used by python Server
+app = FlaskServer (result_queue)
+
+#-----------------------------------------------------------
+#-----------------------------------------------------------
+def printx (*args, flush=True, end="\n"):
+	print ("SERVER2:", *args, flush=flush, end=end)
+#	print ("STDIN:", stdin_list[0])
+#	if len (stdin_list) > 0:
+#		guiProcess = stdin_list [0]
+#		text = " ".join (args)
+#		guiProcess.stdin.write ("HOLA".encode())
+#		guiProcess.stdin.close ()
+
+#-----------------------------------------------------------
+#-----------------------------------------------------------
 class EcuServer:
+	#-- Start server and webdriver
 	def start ():
-		print ("Starting server processes...")
-		serverProcess = threading_Thread (target=EcuServer.run_server_forever)
-		serverProcess.start ()
+		run_server_forever ()
+#		flaskProcess = Thread (target=EcuServer.run_server_forever)
+#		flaskProcess.start ()
 
-		print ("Checking forced exit...")
-		while not os.path.exists ("exit.txt"):
-			print ("...")
-			time.sleep (5)
+#		webdriverProcess = Thread (target=EcuServer.getWebdriver, args=(result_queue,))
+#		webdriverProcess.start ()
 
-		print ("Forced exit...")
-		printx ("...Finalizando CODEBIN...")
-		app.webdriver.quit ()
-		printx ("...Finalizando Server...")
-		serverProcess.join ()
+#		flaskProcess.join ()
+#		webdriverProcess.join ()
 
-		print ("Server terminated...")
-
-
+	#-- Start the server
 	def run_server_forever ():
-		print ("+++ run_server_forever EcuServer webdriver:", app.webdriver)
-
-		# Start the exit thread
-		#exit_thread = threading_Thread (target=EcuServer.checkForcedExit)
-		#exit_thread.start ()
-
-		# Start the server
 		portNumber  = EcuServer.getPortNumber ()
 		server      = make_server('127.0.0.1', portNumber, app)
 		printx (f">>>>>>>>>>>>>>>> Server version: {VERSION} <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
@@ -87,25 +96,13 @@ class EcuServer:
 		server.serve_forever()
 
 	#----------------------------------------------------------------
-	#--  Checks for a file exists to force an exit
-	#----------------------------------------------------------------
-	def checkForcedExit ():
-		print ("+++ Startin exit thread:", os.getcwd())
-		while True:
-			print ("...", end="")
-			if os.path.exists ("exit.txt"):
-				print ("+++ Salida forzada")
-				sys.exit (1)
-			else:
-				time.sleep(5)  # Adjust sleep time as needed	
-
-	#----------------------------------------------------------------
 	# Listen for remote calls from Java GUI
 	#----------------------------------------------------------------
 	@app.route('/start_processing', methods=['GET', 'POST'])
 	def start_processing ():
+		try:
 			printx ("-------------------- Iniciando Procesamiento -------------------------")
-			print ("+++ start_processing webdriver:", app.webdriver)
+			webdriver = app.getWebdriver ()
 			# Get the file name from the request
 			service = flask_request.json ['service']
 			data1   = flask_request.json ['data1']
@@ -118,7 +115,7 @@ class EcuServer:
 			# Call your existing script's function to process the file
 			result = None
 			if (service == "doc_processing"):
-				result = EcuServer.analizeOneDocument (docFilepath=data1, runningDir=data2)
+				result = EcuDoc.analyzeDocument (docFilepath=data1, runningDir=data2, webdriver=webdriver)
 
 			elif (service == "bot_processing"):
 				result = EcuServer.botProcessing (jsonFilepath=data1, runningDir=data2)
@@ -144,43 +141,21 @@ class EcuServer:
 				result = "true"
 
 			else:
+				print (f"Servicio '{service}' no existe")
 				result = f">>> Servicio '{service}' no disponible."
 
-			return {'result': result}
+			return result
+		except Exception as ex:
+			print (f"Error en start_processing: '{ex}'")
 
 	#----------------------------------------------------------------
 	# Stop server
 	#----------------------------------------------------------------
 	def stop_server (runningDir):
-		printx ("...Finalizando sesion CODEBIN...")
-		#webdriver = CodebinBot.getWebdriver ()
-		webdriver.quit ()
-		#printx ("...Finalizando servidor Ecuapass...")
-		#exitFilepath = os.path.join (runningDir, "exit.txt")
-		#printx ("...Directorio salida: ", exitFilepath)
-		#open (exitFilepath,"w").write ("")
+		print ("Finalizando servidor...")
+		print ("...Finalizando CODEBIN")
+		app.stopWebdriver ()
 		sys.exit (0)
-
-	#----------------------------------------------------------------
-	#-- Concurrently process one document given its path
-	#----------------------------------------------------------------
-	def analizeOneDocument (docFilepath, runningDir):
-		workingDir = os.path.dirname (docFilepath)
-
-		# Check if PDF is a valid ECUAPASS document
-		if not EcuServer.isValidDocument (docFilepath):
-			return f"Tipo de documento '{docFilepath}' no válido"
-
-		# Create and start threads for processing files
-		os.chdir (workingDir)
-		ecudoc = EcuDoc ()
-
-		message = ecudoc.extractDocumentFields (docFilepath, runningDir, app.webdriver)
-		return (message)
-
-#		TARGET = ecudoc.extractDocumentFields
-#		ARGS   = (docFilepath, runningDir)
-#		threading_Thread (target=TARGET, args=ARGS).start ()
 
 	#----------------------------------------------------------------
 	#----------------------------------------------------------------
@@ -241,8 +216,6 @@ class EcuServer:
 			mainBotCartaporte (jsonFilepath, runningDir)
 		elif docType == "MANIFIESTO":
 			mainBotManifiesto (jsonFilepath, runningDir)
-		elif docType == "DECLARACION":
-			mainBotDeclaracion (jsonFilepath, runningDir)
 		else:
 			printx ("ERROR: Tipo de documento desconocido: '{filename}'")
 			sys.exit (0)
@@ -262,15 +235,6 @@ class EcuServer:
 		filepath = os.path.join (workingDir, ecuapassdocsFieldsFile)
 		docType = EcuServer.getDoctypeFromFilename (ecuapassdocsFieldsFile)
 		startEcuapassdocsBot (filepath)
-
-	#----------------------------------------------------------------
-	#-- Check if document filename is an image (.png) or a PDF file (.pdf)
-	#----------------------------------------------------------------
-	def isValidDocument (filename):
-		extension = filename.split (".")[1]
-		if extension.lower() in ["PDF", "pdf"]:
-			return True
-		return False
 
 	#----------------------------------------------------------------
 	#-- Get document type from filename
@@ -314,5 +278,5 @@ class EcuServer:
 # Call main 
 #--------------------------------------------------------------------
 if __name__ == '__main__':
-	freeze_support ()
+	mp.freeze_support ()
 	main ()

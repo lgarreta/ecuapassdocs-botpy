@@ -19,6 +19,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from ecuapassdocs.info.ecuapass_utils import Utils
 from ecuapassdocs.info.resourceloader import ResourceLoader 
 from ecuapassdocs.info.ecuapass_info_cartaporte import CartaporteInfo
+from ecuapass_exceptions import EcudocDocumentNotFoundException, EcudocConnectionNotOpenException
 
 #----------------------------------------------------------
 # Main
@@ -44,41 +45,11 @@ def main ():
 		inDir = args [2]
 		cleanCodebinCartaportesFiles (inDir)
 
-#-------------------------------------------------------------------
-# Get document values from CODEBIN web using PDF file doc number
-#-------------------------------------------------------------------
-def mainGetValuesFromCodebinWeb (pdfFilepath, settings):
-	try:
-		webdriver = CodebinBot.getWebdriver ()
-		bot       = CodebinBot (settings, webdriver, pdfFilepath)
-
-		# Call to bot to get values from CODEBIN web
-		codebinValues = None
-		codebinValues = bot.getValuesFromCodebinWeb (bot.docNumber, bot.pais, bot.codigoPais)
-
-		# Format to Azure values
-		azureValues = Utils.getAzureValuesFromCodebinValues (bot.docType, codebinValues, bot.docNumber)
-		# Save data
-		outCbinFilename = f"{bot.docType}-{bot.empresa}-{bot.docNumber}-CBINFIELDS.json"
-		outDocFilename  = f"{bot.docType}-{bot.empresa}-{bot.docNumber}-DOCFIELDS.json"
-		json.dump (codebinValues, open (outCbinFilename, "w"), indent=4)
-		json.dump (azureValues, open (outDocFilename, "w"), indent=4, sort_keys=True)
-
-		return outDocFilename
-	except DocumentNotFoundException as ex:
-		raise ex
-	except:
-		raise Exception ("Intentelo nuevamente. Problemas conectando con CODEBIN.") 
-		#Utils.printx (f"ALERTA: Problemas al conectarse con CODEBIN. Revise URL, usuario y contraseña") 
-		Utils.printException ()
-
-	return None
-
 #----------------------------------------------------------------
 # Bot for filling CODEBIN forms from ECUDOCS fields info
 #----------------------------------------------------------------
 class CodebinBot:
-	def setSettings (self, pdfFilepath, settings, webdriver):
+	def __init__ (self, pdfFilepath, settings, webdriver):
 		self.settings = settings
 		self.empresa  = settings ["empresa"]
 		self.url      = settings ["codebin_url"]
@@ -93,15 +64,6 @@ class CodebinBot:
 
 		self.webdriver             = webdriver
 
-	def initWebdriver (self):
-		Utils.printx ("Initializing webdriver...")
-		options = Options()
-		options.add_argument("--headless")
-		self.IS_OPEN = False
-		self.LAST_PAIS = ""
-		self.webdriver = webdriver.Firefox (options=options)
-		Utils.printx ("...webdriver initialized")
-		return self.webdriver
 	#------------------------------------------------------
 	# Used 
 	#------------------------------------------------------
@@ -109,15 +71,19 @@ class CodebinBot:
 	def getWaitWebdriver ():
 		Utils.printx ("Getting webdriver...")
 		while not hasattr (CodebinBot, "webdriver"):
-			Utils.printx ("Loading webdriver...")
+			Utils.printx ("...Loading webdriver...")
 			options = Options()
-			options.add_argument("--headless")
+			#options.add_argument("--headless")
 			CodebinBot.IS_OPEN = False
 			CodebinBot.LAST_PAIS = ""
+			CodebinBot.ERROR = False
 			CodebinBot.webdriver = webdriver.Firefox (options=options)
-			Utils.printx ("...webdriver Loaded")
+			#CodebinBot.webdriver = webdriver.Firefox ()
+			Utils.printx ("...Webdriver Loaded")
 		return CodebinBot.webdriver
+
 	#------------------------------------------------------
+	# Public method called from EcuDoc
 	#------------------------------------------------------
 	def getDocumentFile (self):
 		try:
@@ -134,7 +100,7 @@ class CodebinBot:
 			json.dump (azureValues, open (outDocFilename, "w"), indent=4, sort_keys=True)
 
 			return outDocFilename
-		except DocumentNotFoundException as ex:
+		except EcudocDocumentNotFoundException as ex:
 			raise ex
 		except:
 			raise Exception ("Intentelo nuevamente. Problemas conectando con CODEBIN.") 
@@ -183,29 +149,11 @@ class CodebinBot:
 			time.sleep (2)
 		return CodebinBot.webdriver
 
-	@staticmethod
-	def initCodebinWebdriver ():
-		Utils.printx (">>>>>>>>>>>>>>>> Iniciando CODEBIN firefox <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
-
-		def funThreadFirefox ():
-			options = Options()
-			options.add_argument("--headless")
-			#options.add_argument('--disable-extensions')
-			#options.add_argument('--blink-settings=imagesEnabled=false')
-			CodebinBot.IS_OPEN = False
-			CodebinBot.LAST_PAIS = ""
-			CodebinBot.webdriver = webdriver.Firefox (options=options)
-			Utils.printx (">>>>>>>>>>>>>>>> CODEBIN firefox is running <<<<<<<<<<<<<<<<<<<<<<<<<<<<<")
-
-		threadFirefox = threading_Thread (target=funThreadFirefox, args=())
-		threadFirefox.start ()
-
 	#-------------------------------------------------------------------
 	#-- Get the CODEBIN id from document number
 	#-- List documents, search the number, and get the id of selected
 	#-------------------------------------------------------------------
 	def getValuesFromCodebinWeb (self, docNumber, pais, codigoPais):
-		print ("+++ Getting values from Codebin web...")
 		try:
 			self.openCodebin (pais)
 
@@ -228,19 +176,22 @@ class CodebinBot:
 			codebinValues = self.getCodebinValuesFromCodebinForm (docForm, codigoPais, docNumber)
 
 			self.closeInitialCodebinWindow ()
-			CodebinBot.LAST_PAIS = pais
-			CodebinBot.IS_OPEN   = True
+			self.LAST_PAIS = pais
+			self.IS_OPEN   = True
 
 			return codebinValues
-		except:
-			self.quitCodebin ()
+		except EcudocConnectionNotOpenException:
 			raise
+		finally:
+			Utils.printx ("Cerrando CODEBIN...")
+			self.quitCodebin ()
 
 
 	#-------------------------------------------------------------------
 	#-------------------------------------------------------------------
 	def getCodebinDocumentId (self, docsTable, docNumber):
-		docId = None
+		docId   = None
+		message = f"Documento '{docNumber}' no encontrado en CODEBIN"
 		try:
 			#table   = container.find_element (By.TAG_NAME, "table")
 			docLink    = docsTable.find_element (By.PARTIAL_LINK_TEXT, docNumber)
@@ -250,10 +201,9 @@ class CodebinBot:
 
 			Utils.printx (f"+++ Documento buscado: '{docNumber}' : Documento encontrado: '{textLink}'")
 			if docNumber != textLink.strip():
-				message = f"Documento número: '{docNumber}' no existe en CODEBIN"
-				raise DocumentNotFoundException (message)
+				raise EcudocDocumentNotFoundException (message)
 		except NoSuchElementException:
-			raise
+			raise EcudocDocumentNotFoundException (message)
 		except:
 			raise
 		return docId
@@ -261,11 +211,14 @@ class CodebinBot:
 	#-------------------------------------------------------------------
 	#-------------------------------------------------------------------
 	def quitCodebin (self):
-		if CodebinBot.webdriver:
-			CodebinBot.webdriver.quit ()
+		#if CodebinBot.webdriver:
+		#	CodebinBot.webdriver.quit ()
 
-		CodebinBot.webdriver = None
 		CodebinBot.IS_OPEN   = False
+		CodebinBot.LAST_PAIS = ""
+		CodebinBot.ERROR     = False
+		CodebinBot.webdriver = None
+		self.webdriver       = None
 
 	#-------------------------------------------------------------------
 	#-------------------------------------------------------------------
@@ -317,27 +270,40 @@ class CodebinBot:
 	# Open codebin session for new docs or go back to begina a new search
 	#-------------------------------------------------------------------
 	def openCodebin (self, pais):
-		if CodebinBot.IS_OPEN and CodebinBot.LAST_PAIS == pais:
-			print ("+++ Going CODEBIN back...")
-			self.webdriver.back ()    # Search results
-		else:
-			print ("+++ Opening CODEBIN web...")
-			# Open and click on "Continuar" button
-			if self.webdriver == None:
-				Utils.printx ("+++ Starting CODEBIN from login...")
-				options = Options()
-				options.add_argument("--headless")
-				CodebinBot.webdriver = webdriver.Firefox (options=options)
-				self.webdriver = CodebinBot.webdriver
+		try:
+			print ("+++ Getting values from CODEBIN web.") 
+			print (f"   ...IS_OPEN: {CodebinBot.IS_OPEN}. LAST_PAIS: {CodebinBot.LAST_PAIS}, ERROR: {CodebinBot.ERROR}")
+			print (f"   ...is_open: {self.IS_OPEN}. last_pais: {self.LAST_PAIS}, error: {self.ERROR}")
+			print (f"   ...WEBDRIVER: {CodebinBot.webdriver}")
+			print (f"   ...webdriver: {self.webdriver}")
 
-			self.enterCodebin ()
-			self.loginCodebin (pais)
-			CodebinBot.IS_OPEN = True
+			if not self.ERROR and self.IS_OPEN and self.LAST_PAIS == pais:
+				print ("   ...Going back...")
+				self.webdriver.back ()    # Search results
+			else:
+				print ("   ...Opening web...")
+				# Open and click on "Continuar" button
+				if self.webdriver == None:
+					Utils.printx ("   ... New session from login...")
+					options = Options()
+					#options.add_argument("--headless")
+					CodebinBot.webdriver = webdriver.Firefox (options=options)
+					self.webdriver = CodebinBot.webdriver
+
+				self.enterCodebin ()
+				self.loginCodebin (pais)
+				self.IS_OPEN = True
+				self.LAST_PAIS = pais
+				self.ERROR = False
+		except Exception as ex:
+			Utils.printException (ex)
+			raise EcudocConnectionNotOpenException ()
 
 	#-------------------------------------------------------------------
 	# Codebin enter session: open URL and click into "Continuar" button
 	#-------------------------------------------------------------------
 	def enterCodebin (self):
+		#self.webdriver.get ("https://www.google.com/")
 		self.webdriver.get (self.url)
 		#self.webdriver.get ("https://byza.corebd.net")
 		submit_button = self.webdriver.find_element(By.XPATH, "//input[@type='submit']")
@@ -706,13 +672,6 @@ def startCodebinBot (docType, codebinFieldsFile):
 	botCodebin = CodebinBot (docType, codebinFieldsFile)
 	botCodebin.transmitFileToCodebin (codebinFieldsFile)
 
-#-----------------------------------------------------------
-#-----------------------------------------------------------
-class CodebinException (Exception):
-	pass
-
-class DocumentNotFoundException (CodebinException):
-	pass
 #-----------------------------------------------------------
 # Call to main
 #-----------------------------------------------------------

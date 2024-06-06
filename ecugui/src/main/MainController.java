@@ -7,19 +7,14 @@ import documento.DocRecord;
 import java.awt.Component;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
 import widgets.ImageViewLens;
 import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.JFrame;
 import javax.swing.JOptionPane;
 import javax.swing.JTabbedPane;
-import javax.swing.JTextField;
 import javax.swing.Timer;
 import javax.swing.UIManager;
 import javax.swing.WindowConstants;
@@ -29,8 +24,9 @@ import widgets.ProgressDialog;
 import workers.ServerWorker;
 
 public class MainController extends Controller {
-
-	String appRelease = "0.87";
+	// String appRelease = "0.87"; One app: GUI calling Server and Server calling Webdrive
+	String appRelease = "0.900"; // Redesigned: three threads for GUI, Server, and Webdrive
+	
 	DocModel doc;             // Handles invoice data: selected, processed, and no procesed
 	MainView mainView;
 	InputsView inputsView;
@@ -50,6 +46,7 @@ public class MainController extends Controller {
 
 	public MainController () {
 		try {
+			System.setProperty("file.encoding", "UTF-8");
 			doc = new DocModel ();
 			doc.initGlobalPaths ();
 			initializeComponents ();
@@ -173,10 +170,15 @@ public class MainController extends Controller {
 	public void onEndProcessing (String statusMsg, String text) {
 		try {
 			if (statusMsg.contains ("EXITO")) {
+				out ("Documento procesado sin errores");
 				String docFilepath = text.split ("'")[1].trim ();
+				out ("Documento PDF: " + docFilepath);
 				String jsonFilepath = Utils.getResultsFile (docFilepath, "ECUFIELDS.json");
+				out ("Documento JSON: " + jsonFilepath);
 				String docType = Utils.getDocumentTypeFromFilename (docFilepath);
+				out ("Documento TYPE: " + docType);
 				DocRecord record = new DocRecord (docType, docFilepath, jsonFilepath);
+				System.out.println  ("Documento record:" + record);
 				doc.currentRecord = record;
 				doc.addProcessedRecord (record);
 				resultsController.addProcessedRecord (record);
@@ -188,7 +190,7 @@ public class MainController extends Controller {
 				JOptionPane.showMessageDialog (mainView, message);
 			}
 		} catch (ParseException | IOException ex) {
-			Logger.getLogger (MainController.class.getName ()).log (Level.SEVERE, null, ex);
+			ex.printStackTrace ();
 		} finally {
 			progressDialog.endProcess ("document_processed");
 		}
@@ -204,12 +206,12 @@ public class MainController extends Controller {
 	public void onWindowClosing () {
 		System.out.println ("+++ onWindowClosing");
 		try {
+			ClosingMessage.showClosingMessage ("Applicación se está cerrando", this.mainView);
 			this.forcedExitWithTimer (3);
 			out ("+++ Finalizando Cliente...");
 			if (serverWorker != null)
 				serverWorker.startProcess ("stop", DocModel.runningPath, null);
 			createExitFile ();
-			ClosingMessage.showClosingMessage ("Applicación se está cerrando", this.mainView);
 		} catch (Exception ex) {
 			ex.printStackTrace ();
 		}
@@ -217,22 +219,19 @@ public class MainController extends Controller {
 
 	public void createExitFile () {
 		try {
+			System.out.println ("+++ Creando archivo de salida forzada...!");			
 			File myFile = new File ("exit.txt");
-			if (myFile.createNewFile ())
-				System.out.println ("+++ Creador archivo de salidad forzada!");
-			else
-				System.out.println ("+++ Archivo de salidad forzada ya existe.");
+			myFile.createNewFile ();
 		} catch (IOException e) {
 			e.printStackTrace ();
 		}
 	}
 
 	private void forcedExitWithTimer (int timeInSeconds) {
-		out ("+++ Tiempo de finalización: " + timeInSeconds);
 		timer = new Timer (timeInSeconds * 1000, new ActionListener () {  // Timer fires after 5 seconds
 			@Override
 			public void actionPerformed (ActionEvent e) {
-				out ("Tiempo de finalización terminado..!");
+				out ("...Finalizado tiempo de salida forzada.");
 				System.exit (0);
 			}
 		});
@@ -249,7 +248,6 @@ public class MainController extends Controller {
 	// Write message text to both: stdout and FeedbackView
 	@Override
 	public void out (String s) {
-		s = "> " + s;
 		System.out.println (s);
 		if (feedbackView != null)
 			feedbackView.println (s);
