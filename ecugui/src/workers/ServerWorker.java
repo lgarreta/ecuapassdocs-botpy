@@ -70,11 +70,11 @@ public class ServerWorker extends SwingWorker {
 			public void run () {
 				if (urlFile.exists ()) {
 					timer.cancel ();
-					controller.out ("+++ Archivo de puerto encontrado");
 					serverUrl = getServerUrl (); // Server address and entry point	
+					controller.out ("URL JAVA CLIENT::" + serverUrl);
 					controller.onServerRunning ();					
 				} else {
-					System.out.println ("+++ Esperando archivo de puerto. Tiempo: " + elapsedTime);
+					controller.out ("+++ Esperando archivo de puerto. Tiempo: " + elapsedTime);
 					elapsedTime++;
 					if (elapsedTime > 5) {
 						timer.cancel ();
@@ -120,11 +120,10 @@ public class ServerWorker extends SwingWorker {
 
 // Send message to server to start a process using data
 	public void startProcess (String service, String data1, String data2) {
-		System.out.println  ("+++ Server URL: " + this.serverUrl);
 		try {
 			// Create URL and open connection
 			if (this.serverUrl == null) {
-				System.out.println  ("+++ No inicializado serverUrl");
+				System.out.println  ("+++ URL no asignada");
 				return;
 			}
 					
@@ -164,11 +163,10 @@ public class ServerWorker extends SwingWorker {
 				return false;
 			} else {
 				// Read the response (optional)
-				System.out.println  ("+++ Recibiendo respuesta del servidor");
 				BufferedReader in = new BufferedReader (new InputStreamReader (connection.getInputStream ()));
 				String line;
 				while ((line = in.readLine ()) != null) {
-					controller.out ("   ...Respuesta del servidor : " + line);
+					controller.out ("Respuesta del servidor : " + line);
 					List<String> chunks = Arrays.asList (line);
 					this.process (chunks);
 				}
@@ -177,8 +175,7 @@ public class ServerWorker extends SwingWorker {
 
 			}
 		} catch (IOException ex) {
-			Logger.getLogger (ServerWorker.class
-				.getName ()).log (Level.SEVERE, null, ex);
+			ex.printStackTrace ();
 		}
 		return false;
 	}
@@ -189,14 +186,14 @@ public class ServerWorker extends SwingWorker {
 		for (Object obj : chunks) {
 			String statusMsg = obj.toString ();
 			controller.out  ("+++ statusMsg: " + statusMsg);			// Check if cloud process ended successfully
-			if (statusMsg.contains ("Procesamiento exitoso del documento"))
+			if (statusMsg.contains ("EXITO")) {
 				controller.onEndProcessing ("EXITO", statusMsg);
-			else if (statusMsg.contains ("Finalizando servidor Ecuapass")) {
+			} else if (statusMsg.contains ("ERROR")) {
+				controller.onEndProcessing ("ERROR", statusMsg);
+			}else if (statusMsg.contains ("Finalizando servidor Ecuapass")) {
 				System.out.println (">>> CLIENTE: Finalizando servidor Ecuapass");
 				System.exit (0);
-			} else if (statusMsg.contains ("SERVER: ERROR:"))
-				controller.onEndProcessing ("ERROR", statusMsg);
-			else if (statusMsg.contains ("Documento no encontrado"))
+			}else if (statusMsg.contains ("Documento no encontrado"))
 				controller.onEndProcessing ("ERROR", statusMsg);
 			else if (statusMsg.contains ("SERVER: ALERTA:")) {
 				// Display to user'ALERTA' messages 
@@ -225,19 +222,12 @@ public class ServerWorker extends SwingWorker {
 	}
 
 	// Copy input files in 'DocModel' to new working dir with new docType name
-	public void copyDocToProjectsDir (DocRecord docRecord) {
+	public String copyDocToProjectsDir (DocRecord docRecord) {
 		docModel.createFolder (docModel.projectsPath);
 		File docFilepath = new File (docRecord.docFilepath);
 		File destFilepath = new File (docModel.projectsPath, docRecord.docTypeFilename);
 		Utils.copyFile (docFilepath.toString (), destFilepath.toString ());
-
-		// Copy cache document in pickle file
-		File docCacheFilepath = new File (Utils.getResultsFile (docRecord.docFilepath, "CACHE.pkl"));
-		docRecord.docFilepath = destFilepath.toString ();
-		if (docCacheFilepath.exists ()) {
-			destFilepath = new File (docModel.projectsPath, docCacheFilepath.getName ());
-			Utils.copyFile (docCacheFilepath.toString (), destFilepath.toString ());
-		}
+		return destFilepath.toString ();
 	}
 
 	// Copy emmbeded resources	(programs and images) to temporal dir

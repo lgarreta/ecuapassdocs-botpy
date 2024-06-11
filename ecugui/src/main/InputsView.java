@@ -8,6 +8,7 @@ import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.io.File;
 import java.util.Arrays;
+import java.util.prefs.Preferences;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import javax.swing.JFileChooser;
@@ -26,6 +27,9 @@ import javax.swing.text.DocumentFilter;
 import widgets.ImageViewLens;
 
 public class InputsView extends javax.swing.JPanel {
+
+	// Preferences key to store the last used directory
+	private static final String LAST_USED_DIR_KEY = "lastUsedDirectory";
 
 	@SuppressWarnings("unchecked")
   // <editor-fold defaultstate="collapsed" desc="Generated Code">//GEN-BEGIN:initComponents
@@ -172,8 +176,10 @@ public class InputsView extends javax.swing.JPanel {
 			public void propertyChange (PropertyChangeEvent evt) {
 				if (JFileChooser.SELECTED_FILE_CHANGED_PROPERTY.equals (evt.getPropertyName ())) {
 					File selectedFile = fileChooser.getSelectedFile ();
-					if (selectedFile != null && !selectedFile.isDirectory ())
-						controller.onFileSelected (fileChooser.getSelectedFile ());
+					if (selectedFile != null && !selectedFile.isDirectory ()) {
+						controller.onFileSelected (selectedFile);
+						updateLastDirectoryUsed (selectedFile);
+					}
 				}
 			}
 		});
@@ -188,20 +194,11 @@ public class InputsView extends javax.swing.JPanel {
 		timer.start ();
 	}
 
-	private static JList getFileList (JFileChooser fileChooser) {
-		Component[] components = fileChooser.getComponents ();
-		for (Component component : components) {
-			if (component instanceof JScrollPane) {
-				JScrollPane scrollPane = (JScrollPane) component;
-				JViewport viewport = scrollPane.getViewport ();
-				Component[] viewportComponents = viewport.getComponents ();
-				for (Component c : viewportComponents) {
-					if (c instanceof JList)
-						return (JList) c;
-				}
-			}
-		}
-		return null;
+	void updateLastDirectoryUsed (File selectedFile) {
+		Preferences prefs = Preferences.userNodeForPackage (InputsView.class);
+
+		String selectedDir = selectedFile.getParent ();
+		prefs.put (LAST_USED_DIR_KEY, selectedDir);
 	}
 
 	private void modifyFileChooser () {
@@ -223,6 +220,13 @@ public class InputsView extends javax.swing.JPanel {
 		// Hide default accept/cancel buttons
 		hideFileSelComponents (fileChooser.getComponents ());
 
+		// Init to last used directory from preferences
+		Preferences prefs = Preferences.userNodeForPackage (InputsView.class);
+		String lastUsedDir = prefs.get (LAST_USED_DIR_KEY, null);
+		if (lastUsedDir == null)
+			lastUsedDir = AppPrefs.FileLocation.get (System.getProperty ("user.home"));
+
+		fileChooser.setCurrentDirectory (new File (lastUsedDir));
 	}
 
 	// DocNumber functions
@@ -279,7 +283,6 @@ public class InputsView extends javax.swing.JPanel {
 			return null;
 	}
 
-	
 	public String createFilenameFromDocNumber (String docNumber) throws Exception {
 		if (this.checkDocNumberType ()) {
 			String filename = "DUMMY-" + getDocType ("SHORTNAME") + "-" + docNumber + ".pdf";
@@ -304,32 +307,27 @@ public class InputsView extends javax.swing.JPanel {
 		return (imageView);
 	}
 
-	// Set FileChooser to selectedDir
-	public void setSelectedDir (String selectedDir) {
-		fileChooser.setCurrentDirectory (new File (selectedDir));
-	}
-
 	public File[] getSelectedFiles () {
 		File[] selectedFiles = fileChooser.getSelectedFiles ();
+
 		for (File fi : selectedFiles) {
 			System.out.println (fi.toString ());
+
 		}
 		return (selectedFiles);
 	}
 
-	public void selectAllFiles () {
-		File[] allFiles = this.getAllFilesFromChooser ();
-		//int fileCount = fileChooser.getCurrentDirectory ().listFiles ().length;
-		//File[] allFiles = fileChooser.getCurrentDirectory ().listFiles ();
-		fileChooser.setSelectedFiles (allFiles);
-	}
-
 	public String getFileWithDocNumberFromFileChooser (String substring) {
-		File[] files = fileChooser.getCurrentDirectory ().listFiles ();		
+		// Filter files to PDF files
+		File[] files = fileChooser.getCurrentDirectory ().listFiles ((File file) -> {
+			String fileName = file.getName ().toLowerCase ();
+			return file.isFile () && (fileName.endsWith (".pdf") || fileName.endsWith (".PDF"));
+		});
+
 		String regex = substring + "\\b";
 		Pattern pattern = Pattern.compile (regex);
 		for (File file : files) {
-			Matcher matcher = pattern.matcher(file.getName ());
+			Matcher matcher = pattern.matcher (file.getName ());
 			if (matcher.find ()) {
 				fileChooser.setSelectedFile (file);
 				return file.toString ();

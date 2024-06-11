@@ -95,8 +95,8 @@ def guiProcess (urlPort):
 	print ("+++ Starting ecuapass GUI process...", os.getcwd())
 
 	#jarCommand = ["java", "-jar", "EcuapassDocsAnalisisGUI.jar"]
-	javaCommand = ["EcuapassDocsGUI.exe"]
-#	javaCommand = ["java", "-jar", "bin/EcuapassDocsGUI.jar"]
+	#javaCommand = ["EcuapassDocsGUI.exe"]
+	javaCommand = ["java", "-jar", "EcuapassDocsGUI.jar"]
 #
 #	# Run the JAR file
 	process = subprocess.Popen (javaCommand, stdout=subprocess.PIPE, stderr=subprocess.PIPE)

@@ -3,10 +3,12 @@
 
 #define MyAppVersion "0.902"
 #define MyAppName "EcuapassDocs-Win"
+#define MyAppDir "ecuapass_app"
+#define MyAppExeName "Ecuapassdocs-app"
+
 #define MyInstallerName "EcuapassDocs-0902-Instalador"
 #define MyAppPublisher "Software Inteligente"
 #define MyAppURL "https://www.softwareinteligente.co"
-#define MyAppExeName "EcuapassDocsGUI.exe"
 #define MyAppIconFile "icon-small-bot.ico"
 
 [Setup]
@@ -20,7 +22,8 @@ AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
-DefaultDirName={autopf}\{#MyAppName}
+;DefaultDirName={autopf}\{#MyAppName}
+DefaultDirName={autopf}\
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 ; Remove the following line to run in administrative install mode (install for all users.)
@@ -38,7 +41,8 @@ Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "resources\ecuapass_app\ecuapass_app.exe"; DestDir: "{app}\ecuapass_app"; Flags: ignoreversion
+Source: "resources\ecuapassgui\EcuapassDocsGUI.exe"; DestDir: "{app}\ecuapassgui"; Flags: ignoreversion
 Source: "resources\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
@@ -47,7 +51,7 @@ Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; \
+Filename: "{app}\ecuapass_app\ecuapass_app.exe"; \
 Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; \
 Flags: nowait postinstall skipifsilent; \
 

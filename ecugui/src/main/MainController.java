@@ -88,10 +88,6 @@ public class MainController extends Controller {
 		// Get components from views
 		imageView = inputsView.getImageView ();
 
-		// Initialize dirs
-		String location = AppPrefs.FileLocation.get (System.getProperty ("user.home"));
-		inputsView.setSelectedDir (location);
-
 		doc.printGlobalPaths (this);
 
 		// Server worker
@@ -114,10 +110,11 @@ public class MainController extends Controller {
 		tabsPanel.addTab ("Resultados", resultsController.resultsView);
 
 		// Call to server to start processing documents
-		serverWorker.copyDocToProjectsDir (doc.currentRecord);
+		String destFilepath = serverWorker.copyDocToProjectsDir (doc.currentRecord);
+		System.out.println  ("+++doc.currentRecord" + doc.currentRecord );
 		DocRecord docRecord = doc.currentRecord;
 
-		String docFilepath = Utils.convertToOSPath (docRecord.docFilepath);
+		String docFilepath = Utils.convertToOSPath (destFilepath);
 		serverWorker.startProcess ("doc_processing", docFilepath, DocModel.runningPath);
 		progressDialog = new ProgressDialog (mainView);
 		progressDialog.setController (this);
@@ -127,6 +124,7 @@ public class MainController extends Controller {
 	// Selected docFile in  FileChooser or table from InputsFilesViewProjects
 	@Override
 	public void onFileSelected (File docFilepath) {
+		System.out.println  ("+++ docFilepath:" + docFilepath);
 		String docNumber = Utils.extractDocNumber (docFilepath.getName ());
 		String docType = Utils.getDocumentTypeFromFilename (docFilepath.getName ());
 		if (inputsView.checkDocNumberType (docNumber, docType)) {
@@ -185,7 +183,7 @@ public class MainController extends Controller {
 				resultsController.resultsView.selectFirstRecord ();
 				tabsPanel.setSelectedIndex (2);
 			} else {
-				out ("Documento procesado con errores");
+				out ("Documento procesado con errores: " + text);
 				String message = text.split (":", 2)[1].replace ("\\", "\n");
 				JOptionPane.showMessageDialog (mainView, message);
 			}
