@@ -166,7 +166,6 @@ public class ServerWorker extends SwingWorker {
 				BufferedReader in = new BufferedReader (new InputStreamReader (connection.getInputStream ()));
 				String line;
 				while ((line = in.readLine ()) != null) {
-					controller.out ("Respuesta del servidor : " + line);
 					List<String> chunks = Arrays.asList (line);
 					this.process (chunks);
 				}
@@ -223,11 +222,12 @@ public class ServerWorker extends SwingWorker {
 
 	// Copy input files in 'DocModel' to new working dir with new docType name
 	public String copyDocToProjectsDir (DocRecord docRecord) {
-		docModel.createFolder (docModel.projectsPath);
-		File docFilepath = new File (docRecord.docFilepath);
-		File destFilepath = new File (docModel.projectsPath, docRecord.docTypeFilename);
-		Utils.copyFile (docFilepath.toString (), destFilepath.toString ());
-		return destFilepath.toString ();
+		docModel.createFolder (DocModel.projectsPath);
+		File sourceFilepath = new File (docRecord.docFilepath);
+		File destFilepath = new File (DocModel.projectsPath, docRecord.docTypeFilename);
+		Utils.copyFile (sourceFilepath.toString (), destFilepath.toString ());
+		String docFilepath = Utils.convertToOSPath (destFilepath.toString ());
+		return docFilepath;
 	}
 
 	// Copy emmbeded resources	(programs and images) to temporal dir

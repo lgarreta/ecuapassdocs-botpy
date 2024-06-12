@@ -16,34 +16,60 @@ from ecuapassserver.ecuapass_server import result_queue, stdin_list
 #------------------------------------------------------
 #------------------------------------------------------
 def main ():
+	print ("-----------------------------------------------------------------")
+	print ("----------------- ecuapass_app version: 0.901 -------------------")
+	print ("-----------------------------------------------------------------")
 	args = sys.argv
+
+	try:
+		# Check for initial files
+		portNumber, settings = initStartingFiles (args) 
+
+		# Run in three modes: Config, Debug, and Default
+		with ThreadPoolExecutor (max_workers=3)	as executor:
+			if settings == None: # Config: Only runs GUI to set 'settings.txt' file
+				guiFuture  = executor.submit (guiProcess, stdin_list)
+			elif portNumber:     # Debug: GUI is being manually run from Netbeans
+				webdriverFuture = executor.submit (webdriverProcess, result_queue)
+				time.sleep (3)
+				serverFuture    = executor.submit (serverProcess, portNumber)
+			else:                # Default: run the three threads
+				guiFuture  = executor.submit (guiProcess, stdin_list)
+				webdriverFuture = executor.submit (webdriverProcess, result_queue)
+				time.sleep (3)
+				serverFuture    = executor.submit (serverProcess, portNumber)
+	except Exception as ex:
+		print (f"Error procesando 'future': {ex}")
+
+#------------------------------------------------------
+# Get free port by adding 1 to the last open portFilenamet
+#------------------------------------------------------
+def initStartingFiles (args):
 	portNumber = None
+	settings   = None
+
 	if len (args) > 1:
 		portNumber = args [1]
 		print (f"Running on a user port number: '{portNumber} ")
 
-	try:
-		print ("Running on an app port number using futures")
-		initStartingFiles () # url_port.txt, exit.txt
+	print ("Buscando archivo de salida: 'exit.txt'...")
+	if os.path.exists ("exit.txt"):
+		os.remove ("exit.txt")
 
-		with ThreadPoolExecutor (max_workers=3)	as executor:
-			webdriverFuture = executor.submit (webdriverProcess, result_queue)
-			if portNumber == None:
-				guiFuture  = executor.submit (guiProcess, stdin_list)
-			time.sleep (3)
-			serverFuture    = executor.submit (serverProcess, portNumber)
-	except Exception as ex:
-		print (f"Error procesando 'future': {ex}")
+	print ("Buscando archivo de puerto: 'old_url_port.txt'...")
+	portFilename	= "url_port.txt"
+	oldPortFilename = "old_url_port.txt"
+	
+	if os.path.exists (portFilename):
+		print ("\t...Renombrado archivo de puerto")
+		os.rename (portFilename, oldPortFilename)
 
-#		try:
-#			#serverResult = serverFuture.result ()
-#			#print ("...Server result:", serverResult)
-#			#guiResult   = guiFuture.result ()
-#			#print ("...Gui result:", guiResult)
-#			#webdriverResult   = webdriverFuture.result ()
-#			#print ("...Webdriver result:", webdriverResult)
-#		except Exception as ex:
-#			print (f"Error procesando 'future': {ex}")
+	# Check if "settings.txt" exists
+	if os.path.exists ("settings.txt"):
+		settings = True
+
+	return (portNumber, settings)
+
 
 #------------------------------------------------------
 # Load webdriver
@@ -103,22 +129,6 @@ def capture_output (process):
 			except UnicodeDecodeError:
 				print ("JAVA CLIENT:", line, end='')
 				print("Error decoding output. Using a different encoding might be necessary.")
-
-#------------------------------------------------------
-# Get free port by adding 1 to the last open portFilenamet
-#------------------------------------------------------
-def initStartingFiles ():
-	print ("Buscando archivo de salida: 'exit.txt'...")
-	if os.path.exists ("exit.txt"):
-		os.remove ("exit.txt")
-
-	print ("Buscando archivo de puerto: 'old_url_port.txt'...")
-	portFilename	= "url_port.txt"
-	oldPortFilename = "old_url_port.txt"
-	
-	if os.path.exists (portFilename):
-		print ("\t...Renombrado archivo de puerto")
-		os.rename (portFilename, oldPortFilename)
 
 #--------------------------------------------------------------------
 # Call main 

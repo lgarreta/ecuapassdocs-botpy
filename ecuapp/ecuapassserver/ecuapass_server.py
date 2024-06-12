@@ -54,7 +54,10 @@ class FlaskServer (Flask):
 		return self.webdriver
 
 	def stopWebdriver (self):
-		CodebinBot.webdriver.quit ()
+		print ("+++ Deteniendo app webdriver:", CodebinBot.webdriver)
+		if CodebinBot.webdriver:
+			print ("+++ Cerrando app webdriver:", CodebinBot.webdriver)
+			CodebinBot.webdriver.quit ()
 
 #-----------------------------------------------------------
 # Global vars

@@ -77,7 +77,7 @@ class CodebinBot:
 			#options.add_argument("--headless")
 			CodebinBot.IS_OPEN = False
 			CodebinBot.LAST_PAIS = ""
-			CodebinBot.ERROR = False
+			CodebinBot.DOC_FOUND = False
 			CodebinBot.webdriver = webdriver.Firefox (options=options)
 			#CodebinBot.webdriver = webdriver.Firefox ()
 			Utils.printx ("...Webdriver Loaded")
@@ -100,8 +100,12 @@ class CodebinBot:
 			json.dump (codebinValues, open (outCbinFilename, "w"), indent=4)
 			json.dump (azureValues, open (outDocFilename, "w"), indent=4, sort_keys=True)
 
+			CodebinBot.DOC_FOUND = True
+			CodebinBot.LAST_PAIS = self.pais
+			CodebinBot.IS_OPEN   = True
 			return outDocFilename
 		except EcudocDocumentNotFoundException:
+			CodebinBot.DOC_FOUND = False
 			raise 
 		except EcudocConnectionNotOpenException:
 			self.quitCodebin ()
@@ -178,9 +182,6 @@ class CodebinBot:
 		codebinValues = self.getCodebinValuesFromCodebinForm (docForm, codigoPais, docNumber)
 
 		self.closeInitialCodebinWindow ()
-		self.LAST_PAIS = pais
-		self.IS_OPEN   = True
-
 		return codebinValues
 
 	#-------------------------------------------------------------------
@@ -209,12 +210,13 @@ class CodebinBot:
 	def quitCodebin (self):
 		#-- Webdriver is killed by the main function as it is an independent thread
 		if CodebinBot.webdriver:
+			print ("+++ Cerrando CODEBIN...")
 			CodebinBot.webdriver.quit ()
 
-		Utils.printx ("Cerrando CODEBIN...")
+		Utils.printx (" Iniciando CODEBIN...")
 		CodebinBot.IS_OPEN   = False
 		CodebinBot.LAST_PAIS = ""
-		CodebinBot.ERROR     = False
+		CodebinBot.DOC_FOUND = False
 		CodebinBot.webdriver = None
 		self.webdriver       = None
 
@@ -270,12 +272,12 @@ class CodebinBot:
 	def openCodebin (self, pais):
 		try:
 			print ("+++ Getting values from CODEBIN web.") 
-			print (f"  ...IS_OPEN: {CodebinBot.IS_OPEN}. LAST_PAIS: {CodebinBot.LAST_PAIS}, ERROR: {CodebinBot.ERROR}")
-			print (f"  ...is_open: {self.IS_OPEN}. last_pais: {self.LAST_PAIS}, error: {self.ERROR}")
+			cb = CodebinBot
+			print (f"  ...IS_OPEN: {cb.IS_OPEN}. LAST_PAIS: {cb.LAST_PAIS}, DOC_FOUND: {cb.DOC_FOUND}")
 			print (f"  ...WEBDRIVER: {CodebinBot.webdriver}")
 			print (f"  ...webdriver: {self.webdriver}")
 
-			if CodebinBot.webdriver and not CodebinBot.ERROR \
+			if CodebinBot.webdriver and CodebinBot.DOC_FOUND \
 			   and CodebinBot.IS_OPEN and CodebinBot.LAST_PAIS == pais:
 				print ("   ...Going back...")
 				self.webdriver.back ()    # Search results
@@ -294,7 +296,7 @@ class CodebinBot:
 				self.loginCodebin (pais)
 				CodebinBot.IS_OPEN = True
 				CodebinBot.LAST_PAIS = pais
-				CodebinBot.ERROR = False
+				CodebinBot.DOC_FOUND = False
 		except Exception as ex:
 			Utils.printException (ex)
 			raise EcudocConnectionNotOpenException ()

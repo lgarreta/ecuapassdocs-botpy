@@ -15,6 +15,7 @@ import java.util.logging.Logger;
 import javax.swing.JFrame;
 import javax.swing.JOptionPane;
 import javax.swing.JTabbedPane;
+import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.UIManager;
 import javax.swing.WindowConstants;
@@ -24,9 +25,10 @@ import widgets.ProgressDialog;
 import workers.ServerWorker;
 
 public class MainController extends Controller {
+
 	// String appRelease = "0.87"; One app: GUI calling Server and Server calling Webdrive
-	String appRelease = "0.900"; // Redesigned: three threads for GUI, Server, and Webdrive
-	
+	String appRelease = "0.901"; // Redesigned: three threads for GUI, Server, and Webdrive
+
 	DocModel doc;             // Handles invoice data: selected, processed, and no procesed
 	MainView mainView;
 	InputsView inputsView;
@@ -46,7 +48,7 @@ public class MainController extends Controller {
 
 	public MainController () {
 		try {
-			System.setProperty("file.encoding", "UTF-8");
+			System.setProperty ("file.encoding", "UTF-8");
 			doc = new DocModel ();
 			doc.initGlobalPaths ();
 			initializeComponents ();
@@ -92,7 +94,7 @@ public class MainController extends Controller {
 
 		// Server worker
 		serverWorker = new ServerWorker (this, doc);
-		serverWorker.copyResourcesToTempDir ();	
+		serverWorker.copyResourcesToTempDir ();
 
 		serverWorker.waitServerUrl ();
 		//serverWorker.getServerUrl ();
@@ -110,21 +112,24 @@ public class MainController extends Controller {
 		tabsPanel.addTab ("Resultados", resultsController.resultsView);
 
 		// Call to server to start processing documents
-		String destFilepath = serverWorker.copyDocToProjectsDir (doc.currentRecord);
-		System.out.println  ("+++doc.currentRecord" + doc.currentRecord );
+		String docFilepath = serverWorker.copyDocToProjectsDir (doc.currentRecord);
 		DocRecord docRecord = doc.currentRecord;
-
-		String docFilepath = Utils.convertToOSPath (destFilepath);
 		serverWorker.startProcess ("doc_processing", docFilepath, DocModel.runningPath);
-		progressDialog = new ProgressDialog (mainView);
-		progressDialog.setController (this);
-		progressDialog.startProcess ();
+
+		// Shows a progress dialog while the process is running
+		SwingUtilities.invokeLater (() -> {
+			try {
+				progressDialog = new ProgressDialog (this, mainView);
+				progressDialog.startProcess ();
+			} catch (Exception e) {
+			}
+		});
+
 	}
 
 	// Selected docFile in  FileChooser or table from InputsFilesViewProjects
 	@Override
 	public void onFileSelected (File docFilepath) {
-		System.out.println  ("+++ docFilepath:" + docFilepath);
 		String docNumber = Utils.extractDocNumber (docFilepath.getName ());
 		String docType = Utils.getDocumentTypeFromFilename (docFilepath.getName ());
 		if (inputsView.checkDocNumberType (docNumber, docType)) {
@@ -170,13 +175,10 @@ public class MainController extends Controller {
 			if (statusMsg.contains ("EXITO")) {
 				out ("Documento procesado sin errores");
 				String docFilepath = text.split ("'")[1].trim ();
-				out ("Documento PDF: " + docFilepath);
 				String jsonFilepath = Utils.getResultsFile (docFilepath, "ECUFIELDS.json");
-				out ("Documento JSON: " + jsonFilepath);
 				String docType = Utils.getDocumentTypeFromFilename (docFilepath);
-				out ("Documento TYPE: " + docType);
 				DocRecord record = new DocRecord (docType, docFilepath, jsonFilepath);
-				System.out.println  ("Documento record:" + record);
+				System.out.println ("+++ Documento record:" + "\n" + record);
 				doc.currentRecord = record;
 				doc.addProcessedRecord (record);
 				resultsController.addProcessedRecord (record);
@@ -189,6 +191,7 @@ public class MainController extends Controller {
 			}
 		} catch (ParseException | IOException ex) {
 			ex.printStackTrace ();
+			out (ex.toString ());
 		} finally {
 			progressDialog.endProcess ("document_processed");
 		}
@@ -217,7 +220,7 @@ public class MainController extends Controller {
 
 	public void createExitFile () {
 		try {
-			System.out.println ("+++ Creando archivo de salida forzada...!");			
+			System.out.println ("+++ Creando archivo de salida forzada...!");
 			File myFile = new File ("exit.txt");
 			myFile.createNewFile ();
 		} catch (IOException e) {

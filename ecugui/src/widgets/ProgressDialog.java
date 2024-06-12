@@ -22,11 +22,9 @@ public class ProgressDialog {
 	private Timer timer;
 	Controller controller;
 
-	public ProgressDialog (JFrame mainFrame) {
-		this.mainFrame = mainFrame;
-	}
-	public void setController (Controller controller) {
+	public ProgressDialog (Controller controller, JFrame mainFrame) {
 		this.controller = controller;
+		this.mainFrame = mainFrame;
 	}
 
 	public void startProcess () {
@@ -88,7 +86,7 @@ public class ProgressDialog {
 		mainFrame.getContentPane ().setLayout (new FlowLayout ());
 
 		JButton startButton = new JButton ("Start Process");
-		ProgressDialog pd = new ProgressDialog (mainFrame);
+		ProgressDialog pd = new ProgressDialog (null, mainFrame);
 		startButton.addActionListener (e -> pd.startProcess ());
 
 		mainFrame.getContentPane ().add (startButton);
