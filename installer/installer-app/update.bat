@@ -1,2 +1,0 @@
-echo "Actualizando applicación..."
-notepad
